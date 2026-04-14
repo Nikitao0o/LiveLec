@@ -22,6 +22,7 @@ app.add_middleware(
 # Событие при запуске приложения
 @app.on_event("startup")
 async def startup():
+    from app.models import User, Lecture, Question, Analytics, TranscriptSegment
     # Создаём все таблицы в базе данных
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
