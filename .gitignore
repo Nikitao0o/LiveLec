@@ -30,3 +30,9 @@ server/*.db
 
 # Logs
 *.log
+
+#client
+node_modules/
+
+#repomix
+repomix-output.xml

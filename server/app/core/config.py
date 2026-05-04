@@ -3,7 +3,7 @@ from typing import List
 
 class Settings(BaseSettings):
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://livelec:livelecpass@localhost:5432/livelec"
+    DATABASE_URL: str = "postgresql+asyncpg://user:password@db:5432/db"
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379"

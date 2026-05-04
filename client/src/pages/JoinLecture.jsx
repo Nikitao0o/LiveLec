@@ -1,9 +1,11 @@
 import React, { useState, useRef } from 'react';
 import { ArrowRight, GraduationCap } from 'lucide-react';
+import { useNavigate } from 'react-router-dom'; // Добавьте этот импорт
 
 const JoinLecture = () => {
   const [pin, setPin] = useState(['', '', '', '', '', '']);
   const inputRefs = useRef([]);
+  const navigate = useNavigate(); // Добавьте эту строку
 
   const handleChange = (value, index) => {
     if (isNaN(value)) return;
@@ -18,10 +20,15 @@ const JoinLecture = () => {
   };
 
   const handleKeyDown = (e, index) => {
-    // Удаление (Backсpace) возвращает на предыдущее поле
+    // Удаление (Backspace) возвращает на предыдущее поле
     if (e.key === 'Backspace' && pin[index] === '' && index > 0) {
       inputRefs.current[index - 1].focus();
     }
+  };
+
+  // Добавьте функцию-обработчик для кнопки "Я преподаватель"
+  const handleTeacherClick = () => {
+    navigate('/login');
   };
 
   return (
@@ -75,7 +82,10 @@ const JoinLecture = () => {
           {/* Переход для преподавателя */}
           <div className="mt-12 w-full pt-8 border-t border-slate-100">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Панель управления</p>
-            <button className="text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors border-2 border-indigo-50 px-6 py-2 rounded-xl hover:bg-indigo-50">
+            <button 
+              onClick={handleTeacherClick}  // Добавьте этот обработчик
+              className="text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors border-2 border-indigo-50 px-6 py-2 rounded-xl hover:bg-indigo-50 cursor-pointer"
+            >
                Я преподаватель
             </button>
           </div>
