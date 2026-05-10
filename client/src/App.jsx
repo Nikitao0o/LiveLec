@@ -4,6 +4,7 @@ import StudentLecture from './pages/StudentLecture';
 import TeacherDashboard from './pages/TeacherDashboard';
 import TeacherLectureControl from './pages/TeacherLectureControl';
 import PostLectureAnalytics from './pages/PostLectureAnalytics'; 
+import AuthTeacher from './pages/AuthTeacher';
 function App() {
   return (
     <Router>
@@ -13,6 +14,7 @@ function App() {
         <Route path="/teacher" element={<TeacherDashboard />} />
         <Route path="/teacher/control" element={<TeacherLectureControl />} />
         <Route path="/teacher/analytics" element={<PostLectureAnalytics />} />
+        <Route path="/login" element={<AuthTeacher />} />
       </Routes>
     </Router>
   );
