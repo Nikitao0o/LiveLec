@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Plus, BarChart3, Users, Clock, ArrowRight, X, BookOpen, Tag } from 'lucide-react';
+import { useNavigate } from 'react-router-dom'; // Добавлено
 
 const TeacherDashboard = () => {
+  const navigate = useNavigate(); // Добавлено
   // Состояние для модального окна
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newLecture, setNewLecture] = useState({ title: '', subject: '' });
@@ -62,7 +64,13 @@ const TeacherDashboard = () => {
       <div className="text-left leading-none">
         <div className="flex items-center justify-between mb-6 px-2 leading-none">
           <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 leading-none">Недавние лекции</h3>
-          <button className="text-xs font-bold text-indigo-600 hover:underline leading-none">Показать все</button>
+          {/* Исправлено: добавлена навигация в архив */}
+          <button 
+            onClick={() => navigate('/teacher/archive')} 
+            className="text-xs font-bold text-indigo-600 hover:underline leading-none cursor-pointer"
+          >
+            Показать все
+          </button>
         </div>
 
         <div className="space-y-4 leading-none">
@@ -86,7 +94,10 @@ const TeacherDashboard = () => {
                   <p className="text-[9px] font-bold text-rose-500 uppercase tracking-widest mb-1 leading-none">Сложные моменты</p>
                   <p className="font-black text-slate-700 leading-none">{lec.confusion} жалоб</p>
                 </div>
-                <button className="bg-slate-900 text-white px-5 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-indigo-600 transition-colors flex items-center gap-2 leading-none">
+                <button 
+                  onClick={() => navigate('/teacher/analytics')} 
+                  className="bg-slate-900 text-white px-5 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-indigo-600 transition-colors flex items-center gap-2 leading-none cursor-pointer"
+                >
                   Аналитика <ArrowRight size={14} />
                 </button>
               </div>

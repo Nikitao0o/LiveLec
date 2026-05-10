@@ -5,8 +5,11 @@ import {
   Triangle, Square, Circle, Diamond
 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
+import { useNavigate } from 'react-router-dom'; // Добавлено
 
 const TeacherLectureControl = () => {
+  const navigate = useNavigate(); // Добавлено
+
   // --- ЛОГИКА КВИЗА ---
   const [isQuizActive, setIsQuizActive] = useState(false);
   const [quizTimer, setQuizTimer] = useState(15);
@@ -69,7 +72,11 @@ const TeacherLectureControl = () => {
                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 leading-none">Код входа</p>
                  <p className="text-3xl font-mono font-black text-indigo-600 tracking-tighter leading-none">481 516</p>
               </div>
-              <button className="bg-rose-50 text-rose-600 px-4 py-2 rounded-xl font-bold border border-rose-100 hover:bg-rose-100 transition-all flex items-center gap-2 leading-none cursor-pointer">
+              {/* Исправленная кнопка Завершить */}
+              <button 
+                onClick={() => navigate('/teacher/analytics')} 
+                className="bg-rose-50 text-rose-600 px-4 py-2 rounded-xl font-bold border border-rose-100 hover:bg-rose-100 transition-all flex items-center gap-2 leading-none cursor-pointer"
+              >
                  <XCircle size={18} /> Завершить
               </button>
            </div>
@@ -101,7 +108,7 @@ const TeacherLectureControl = () => {
           
           <div className="flex-1 bg-indigo-900 rounded-[2.5rem] relative overflow-hidden flex flex-col shadow-2xl border-4 border-white leading-none">
             
-            {/* --- ОВЕРЛЕЙ КВИЗА  --- */}
+            {/* --- ОВЕРЛЕЙ КВИЗА --- */}
             {isQuizActive && (
               <div className="absolute inset-0 z-50 bg-indigo-950 flex flex-col p-8 text-white animate-in fade-in duration-300 text-left">
                 
