@@ -17,7 +17,7 @@ const PostLectureAnalytics = () => {
       {/* Header Actions */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 text-left leading-none">
         <div>
-          <h1 className="text-2xl font-black text-slate-800 tracking-tight italic uppercase leading-none">Итоги: ACID & Транзакции</h1>
+          <h1 className="text-2xl font-black text-slate-800 tracking-tight italic uppercase leading-none">Итоги: название лекции</h1>
           <p className="text-sm text-slate-400 font-medium mt-2 uppercase tracking-widest leading-none">12 октября 2026 • 1ч 32м</p>
         </div>
         <div className="flex gap-3">

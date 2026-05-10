@@ -31,9 +31,7 @@ const AuthTeacher = () => {
 
       <div className="w-full max-w-md bg-white rounded-[3rem] shadow-2xl shadow-indigo-100 overflow-hidden border border-slate-100 flex flex-col">
         
-        {/* Header - ТЕПЕРЬ СИНИЙ (INDIGO) */}
         <div className="bg-indigo-600 p-10 text-center text-white relative overflow-hidden">
-          {/* Декоративные круги на фоне, как на главной */}
           <div className="absolute top-0 right-0 -mr-10 -mt-10 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
           
           <div className="relative z-10 flex flex-col items-center">

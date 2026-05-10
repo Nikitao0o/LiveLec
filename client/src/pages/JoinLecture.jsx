@@ -1,11 +1,11 @@
 import React, { useState, useRef } from 'react';
 import { ArrowRight, GraduationCap } from 'lucide-react';
-import { useNavigate } from 'react-router-dom'; // Добавьте этот импорт
+import { useNavigate } from 'react-router-dom'; 
 
 const JoinLecture = () => {
   const [pin, setPin] = useState(['', '', '', '', '', '']);
   const inputRefs = useRef([]);
-  const navigate = useNavigate(); // Добавьте эту строку
+  const navigate = useNavigate();
 
   const handleChange = (value, index) => {
     if (isNaN(value)) return;
@@ -26,7 +26,7 @@ const JoinLecture = () => {
     }
   };
 
-  // Добавьте функцию-обработчик для кнопки "Я преподаватель"
+ 
   const handleTeacherClick = () => {
     navigate('/login');
   };
@@ -83,7 +83,7 @@ const JoinLecture = () => {
           <div className="mt-12 w-full pt-8 border-t border-slate-100">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Панель управления</p>
             <button 
-              onClick={handleTeacherClick}  // Добавьте этот обработчик
+              onClick={handleTeacherClick}  
               className="text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors border-2 border-indigo-50 px-6 py-2 rounded-xl hover:bg-indigo-50 cursor-pointer"
             >
                Я преподаватель
