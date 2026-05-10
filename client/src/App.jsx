@@ -1,20 +1,35 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import JoinLecture from './pages/JoinLecture';
 import StudentLecture from './pages/StudentLecture';
-import TeacherDashboard from './pages/TeacherDashboard';
-import TeacherLectureControl from './pages/TeacherLectureControl';
-import PostLectureAnalytics from './pages/PostLectureAnalytics'; 
 import AuthTeacher from './pages/AuthTeacher';
+import TeacherLectureControl from './pages/TeacherLectureControl';
+
+// Импорты страниц, которые будут внутри Layout
+import TeacherLayout from './layouts/TeacherLayout';
+import TeacherDashboard from './pages/TeacherDashboard';
+import GlobalAnalytics from './pages/GlobalAnalytics';
+import LectureArchive from './pages/LectureArchive';
+import TeacherSettings from './pages/TeacherSettings';
+import PostLectureAnalytics from './pages/PostLectureAnalytics'; 
+
 function App() {
   return (
     <Router>
       <Routes>
+        {/* Свободные страницы */}
         <Route path="/" element={<JoinLecture />} />
-        <Route path="/lecture" element={<StudentLecture />} />
-        <Route path="/teacher" element={<TeacherDashboard />} />
-        <Route path="/teacher/control" element={<TeacherLectureControl />} />
-        <Route path="/teacher/analytics" element={<PostLectureAnalytics />} />
         <Route path="/login" element={<AuthTeacher />} />
+        <Route path="/lecture" element={<StudentLecture />} />
+        <Route path="/teacher/control" element={<TeacherLectureControl />} />
+
+        {/* Страницы преподавателя с общим боковым меню (Layout) */}
+        <Route path="/teacher" element={<TeacherLayout />}>
+          <Route index element={<TeacherDashboard />} />
+          <Route path="analytics-global" element={<GlobalAnalytics />} />
+          <Route path="archive" element={<LectureArchive />} />
+          <Route path="settings" element={<TeacherSettings />} />
+          <Route path="analytics" element={<PostLectureAnalytics />} />
+        </Route>
       </Routes>
     </Router>
   );
