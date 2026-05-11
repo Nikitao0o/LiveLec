@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import engine, Base
 from app.api import auth_router, lectures_router, questions_router, analytics_router
+from app.ws import ws_router
 
 app = FastAPI(
     title="LiveLec API",
@@ -23,6 +24,7 @@ app.include_router(auth_router)
 app.include_router(lectures_router)
 app.include_router(questions_router)
 app.include_router(analytics_router)
+app.include_router(ws_router)
 
 @app.on_event("startup")
 async def startup():
