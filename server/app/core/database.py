@@ -5,7 +5,7 @@ from app.core.config import settings
 # Для SQLite
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=True,
+    echo=settings.SQL_ECHO,
     future=True
 )
 

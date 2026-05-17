@@ -4,6 +4,7 @@ from typing import List
 class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://user:password@db:5432/db"
+    SQL_ECHO: bool = False
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379"

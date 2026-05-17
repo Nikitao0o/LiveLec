@@ -5,3 +5,4 @@ class ConfusionCreate(BaseModel):
 
 class ConfusionResponse(BaseModel):
     status: str = "recorded"
+    total_confusion_count: int = 0

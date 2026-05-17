@@ -3,12 +3,22 @@ from fastapi import WebSocket, WebSocketDisconnect, APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.database import get_db
-from app.models.lecture import Lecture
+from app.models.lecture import Lecture, LectureStatus
 from app.models.question import Question
 from app.models.analytics import Analytics
 from app.ws.manager import manager
 
 router = APIRouter()
+
+def serialize_question(question: Question) -> dict:
+    return {
+        "id": question.id,
+        "lecture_id": question.lecture_id,
+        "content": question.content,
+        "likes_count": question.likes_count,
+        "is_answered": question.is_answered,
+        "created_at": question.created_at.isoformat() if question.created_at else None
+    }
 
 @router.websocket("/ws/{pin_code}")
 async def websocket_endpoint(
@@ -24,7 +34,10 @@ async def websocket_endpoint(
     Подключение: ws://localhost:8000/ws/451968?user_type=teacher
     """
     
-    # Проверяем, существует ли лекция с таким PIN
+    if user_type not in ("teacher", "student"):
+        await websocket.close(code=1008, reason="Invalid user type")
+        return
+
     result = await db.execute(select(Lecture).where(Lecture.pin_code == pin_code))
     lecture = result.scalar_one_or_none()
     
@@ -40,17 +53,27 @@ async def websocket_endpoint(
         await websocket.send_json({
             "type": "CONNECTED",
             "data": {
+                "lecture_id": lecture.id,
                 "pin_code": pin_code,
                 "user_type": user_type,
-                "lecture_id": lecture.id,
-                "title": lecture.title
+                "title": lecture.title,
+                "discipline": lecture.discipline,
+                "status": lecture.status.value
             }
         })
+        await manager.broadcast_participants(pin_code)
         
         # Обработка входящих сообщений
         while True:
             data = await websocket.receive_text()
-            message = json.loads(data)
+            try:
+                message = json.loads(data)
+            except json.JSONDecodeError:
+                await websocket.send_json({
+                    "type": "ERROR",
+                    "data": {"detail": "Invalid JSON"}
+                })
+                continue
             message_type = message.get("type")
             message_data = message.get("data", {})
             
@@ -68,6 +91,12 @@ async def websocket_endpoint(
             
             elif message_type == "PING":
                 await websocket.send_json({"type": "PONG"})
+
+            else:
+                await websocket.send_json({
+                    "type": "ERROR",
+                    "data": {"detail": "Unknown message type"}
+                })
                 
     except WebSocketDisconnect:
         manager.disconnect(websocket, pin_code)
@@ -86,6 +115,8 @@ async def handle_new_question(pin_code: str, data: dict, db: AsyncSession):
     
     if not lecture:
         return
+    if lecture.status == LectureStatus.FINISHED:
+        return
     
     # Сохраняем вопрос в БД
     new_question = Question(
@@ -97,12 +128,7 @@ async def handle_new_question(pin_code: str, data: dict, db: AsyncSession):
     await db.commit()
     await db.refresh(new_question)
     
-    question_data = {
-        "id": new_question.id,
-        "content": new_question.content,
-        "likes_count": new_question.likes_count,
-        "created_at": new_question.created_at.isoformat() if new_question.created_at else None
-    }
+    question_data = serialize_question(new_question)
     
     # Рассылаем всем в комнате
     await manager.broadcast_to_room(pin_code, {
@@ -117,21 +143,17 @@ async def handle_like_question(pin_code: str, data: dict, db: AsyncSession):
     if not question_id:
         return
     
-    # Увеличиваем счётчик лайков
-    from sqlalchemy import update
-    await db.execute(
-        update(Question)
-        .where(Question.id == question_id)
-        .values(likes_count=Question.likes_count + 1)
-    )
-    await db.commit()
-    
-    # Получаем обновлённое количество лайков
     result = await db.execute(select(Question).where(Question.id == question_id))
     question = result.scalar_one_or_none()
-    
     if not question:
         return
+    lecture = await db.get(Lecture, question.lecture_id)
+    if not lecture or lecture.status == LectureStatus.FINISHED:
+        return
+
+    question.likes_count += 1
+    await db.commit()
+    await db.refresh(question)
     
     # Рассылаем всем обновление лайка
     await manager.broadcast_to_room(pin_code, {
@@ -150,6 +172,8 @@ async def handle_confusion_click(pin_code: str, data: dict, db: AsyncSession):
     lecture = result.scalar_one_or_none()
     
     if not lecture:
+        return
+    if lecture.status == LectureStatus.FINISHED:
         return
     
     # Сохраняем в аналитику

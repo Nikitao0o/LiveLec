@@ -23,9 +23,6 @@ class ConnectionManager:
         
         print(f"Подключен {user_type} к лекции {pin_code}")
         
-        # Рассылаем обновление количества участников
-        await self.broadcast_participants(pin_code)
-    
     def disconnect(self, websocket: WebSocket, pin_code: str):
         """Отключение клиента от комнаты"""
         if pin_code in self.active_connections:

@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
+
+from app.schemas.question import QuestionResponse
 
 class LectureCreate(BaseModel):
     title: str
@@ -8,6 +10,7 @@ class LectureCreate(BaseModel):
 
 class LectureResponse(BaseModel):
     id: int
+    teacher_id: int
     title: str
     discipline: Optional[str]
     pin_code: str
@@ -20,4 +23,7 @@ class LectureJoin(BaseModel):
 class LectureJoinResponse(BaseModel):
     lecture_id: int
     title: str
+    discipline: Optional[str]
+    pin_code: str
     status: str
+    questions: List[QuestionResponse] = []
