@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, User, ArrowLeft, GraduationCap, ChevronRight } from 'lucide-react';
+import api from '../api';
 
 const AuthTeacher = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -12,10 +13,40 @@ const AuthTeacher = () => {
   
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Имитируем успешный вход для прототипа
-    navigate('/teacher');
+    
+    try {
+      if (isLogin) {
+        // Логин
+        const response = await api.post('/auth/token', {
+          email: formData.email,
+          password: formData.password
+        });
+        localStorage.setItem('token', response.data.access_token);
+      } else {
+        // Регистрация
+        await api.post('/auth/register', {
+          name: formData.name,
+          email: formData.email,
+          password: formData.password
+        });
+        
+        // Сразу после регистрации авторизуемся
+        const response = await api.post('/auth/token', {
+          email: formData.email,
+          password: formData.password
+        });
+        localStorage.setItem('token', response.data.access_token);
+      }
+      
+      // Перенаправляем в дашборд
+      navigate('/teacher');
+      
+    } catch (error) {
+      console.error('Ошибка авторизации:', error.response?.data || error.message);
+      alert(error.response?.data?.detail || 'Произошла ошибка при авторизации');
+    }
   };
 
   return (

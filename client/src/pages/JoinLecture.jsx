@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { ArrowRight, GraduationCap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom'; 
+import api from '../api';
 
 const JoinLecture = () => {
   const [pin, setPin] = useState(['', '', '', '', '', '']);
@@ -26,7 +27,33 @@ const JoinLecture = () => {
     }
   };
 
- 
+  const handleJoin = async () => {
+    const currentPin = pin.join('');
+    if (currentPin.length !== 6) {
+      alert('Введите 6-значный код');
+      return;
+    }
+
+    try {
+      const response = await api.post('/lectures/join', {
+        pin_code: currentPin
+      });
+      
+      const lectureData = response.data;
+      
+      // Сохраняем PIN и данные лекции
+      localStorage.setItem('currentPin', currentPin);
+      localStorage.setItem('lectureData', JSON.stringify(lectureData));
+      
+      // Переходим в интерфейс студента
+      navigate('/lecture');
+      
+    } catch (error) {
+      console.error('Ошибка входа:', error.response?.data);
+      alert('Лекция не найдена или код неверен');
+    }
+  };
+
   const handleTeacherClick = () => {
     navigate('/login');
   };
@@ -74,7 +101,10 @@ const JoinLecture = () => {
             ))}
           </div>
 
-          <button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-xl shadow-indigo-200 flex items-center justify-center gap-3 transition-all hover:translate-y-[-2px] active:scale-95 group">
+          <button 
+            onClick={handleJoin} 
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-xl shadow-indigo-200 flex items-center justify-center gap-3 transition-all hover:translate-y-[-2px] active:scale-95 group"
+          >
             <span className="text-lg">Войти в лекцию</span>
             <ArrowRight size={22} strokeWidth={3} className="group-hover:translate-x-1 transition-transform" />
           </button>
