@@ -5,21 +5,63 @@ import {
   Triangle, Square, Circle, Diamond
 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
-import { useNavigate } from 'react-router-dom'; // Добавлено
+import { useNavigate } from 'react-router-dom';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 const TeacherLectureControl = () => {
-  const navigate = useNavigate(); // Добавлено
+  const navigate = useNavigate();
+  // Для прототипа используем фиксированный PIN или берем из localStorage, если он есть
+  // (В реальном приложении он будет передаваться через state роутера из Dashboard)
+  const pinCode = localStorage.getItem('teacherPin') || '481516';
 
-  // --- ЛОГИКА КВИЗА ---
+  // --- WEBSOCKETS ---
+  const { isConnected, lastMessage, sendMessage } = useWebSocket(pinCode, 'teacher');
+  const [participantsCount, setParticipantsCount] = useState(0);
+
+  // Вопросы
+  const [questions, setQuestions] = useState([]);
+
+  // Аналитика (график)
+  const [analyticsData, setAnalyticsData] = useState(
+    Array.from({ length: 6 }).map((_, i) => ({ time: `-${5-i}m`, value: 0 }))
+  );
+
+  // Обработка входящих WS-сообщений
+  useEffect(() => {
+    if (!lastMessage) return;
+
+    switch (lastMessage.type) {
+      case 'PARTICIPANTS_UPDATE':
+        setParticipantsCount(lastMessage.data.count);
+        break;
+      case 'NEW_QUESTION':
+        setQuestions((prev) => [lastMessage.data, ...prev]);
+        break;
+      case 'LIKE_UPDATE':
+        setQuestions((prev) => prev.map(q => 
+          q.id === lastMessage.data.question_id 
+            ? { ...q, likes_count: lastMessage.data.likes_count } 
+            : q
+        ).sort((a, b) => b.likes_count - a.likes_count));
+        break;
+      case 'CONFUSION_UPDATE':
+        // Обновляем график понимания
+        setAnalyticsData(prev => {
+          const now = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          const newData = [...prev, { time: now, value: lastMessage.data.total_confusion_count }];
+          if (newData.length > 10) newData.shift(); // Храним только последние 10 точек
+          return newData;
+        });
+        break;
+      default:
+        break;
+    }
+  }, [lastMessage]);
+
+  // --- ЛОГИКА КВИЗА (Заглушка) ---
   const [isQuizActive, setIsQuizActive] = useState(false);
   const [quizTimer, setQuizTimer] = useState(15);
-  const [quizResults, setQuizResults] = useState({
-    1: 45, // Atomicity
-    2: 30, // Consistency
-    3: 12, // Isolation
-    4: 8   // Durability
-  });
-
+  const [quizResults, setQuizResults] = useState({ 1: 45, 2: 30, 3: 12, 4: 8 });
   const totalVotes = Object.values(quizResults).reduce((a, b) => a + b, 0);
 
   useEffect(() => {
@@ -35,17 +77,10 @@ const TeacherLectureControl = () => {
     setQuizTimer(15);
   };
 
-  // Остальные данные
-  const [analyticsData] = useState([
-    { time: '10:00', value: 5 }, { time: '10:05', value: 12 },
-    { time: '10:10', value: 45 }, { time: '10:15', value: 10 },
-    { time: '10:20', value: 25 }, { time: '10:25', value: 8 },
-  ]);
-
-  const [questions] = useState([
-    { id: 1, text: "А будет тест после лекции?", likes: 25 },
-    { id: 2, text: "А вы скинете презентацию?", likes: 18 },
-  ]);
+  const finishLecture = () => {
+    // Тут можно добавить API запрос на остановку лекции
+    navigate('/teacher/analytics');
+  };
 
   return (
     <div className="h-screen bg-slate-100 flex flex-col font-sans overflow-hidden text-left leading-none">
@@ -57,24 +92,25 @@ const TeacherLectureControl = () => {
           <div className="text-left">
              <h1 className="text-lg font-bold text-slate-800 leading-none uppercase tracking-tight">Архитектура БД: ACID</h1>
              <div className="flex items-center gap-2 mt-1 leading-none text-left">
-                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">В эфире: 42:15</span>
+                <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-rose-500'}`}></span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">
+                  {isConnected ? 'В эфире' : 'Ожидание подключения'}
+                </span>
              </div>
           </div>
         </div>
         <div className="flex items-center gap-8 leading-none">
            <div className="flex items-center gap-2 text-slate-400 font-medium leading-none">
               <Users size={18} />
-              <span className="text-sm font-bold tracking-tighter">142 студента</span>
+              <span className="text-sm font-bold tracking-tighter">{participantsCount} студентов</span>
            </div>
            <div className="flex items-center gap-4 leading-none text-left">
               <div className="text-right leading-none mr-2">
                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 leading-none">Код входа</p>
-                 <p className="text-3xl font-mono font-black text-indigo-600 tracking-tighter leading-none">481 516</p>
+                 <p className="text-3xl font-mono font-black text-indigo-600 tracking-tighter leading-none">{pinCode}</p>
               </div>
-              {/* Исправленная кнопка Завершить */}
               <button 
-                onClick={() => navigate('/teacher/analytics')} 
+                onClick={finishLecture} 
                 className="bg-rose-50 text-rose-600 px-4 py-2 rounded-xl font-bold border border-rose-100 hover:bg-rose-100 transition-all flex items-center gap-2 leading-none cursor-pointer"
               >
                  <XCircle size={18} /> Завершить
@@ -95,11 +131,14 @@ const TeacherLectureControl = () => {
             {questions.map((q) => (
               <div key={q.id} className="p-5 rounded-[2rem] bg-white border border-slate-200 shadow-sm leading-none text-left transition-all hover:border-indigo-200">
                 <div className="flex justify-between items-start mb-2 leading-none">
-                   <span className="text-indigo-600 font-black text-sm ml-auto leading-none tracking-tighter italic">↑ {q.likes} лайков</span>
+                   <span className="text-indigo-600 font-black text-sm ml-auto leading-none tracking-tighter italic">↑ {q.likes_count} лайков</span>
                 </div>
-                <p className="text-sm font-bold text-slate-800 italic leading-snug tracking-tighter">"{q.text}"</p>
+                <p className="text-sm font-bold text-slate-800 italic leading-snug tracking-tighter">"{q.content}"</p>
               </div>
             ))}
+            {questions.length === 0 && (
+               <p className="text-xs font-bold text-slate-400 text-center uppercase tracking-widest mt-10">Пока пусто</p>
+            )}
           </div>
         </aside>
 
@@ -159,12 +198,6 @@ const TeacherLectureControl = () => {
                      </div>
                    ))}
                 </div>
-
-                {/* Инфо внизу */}
-                <div className="mt-4 pt-4 border-t border-white/5 flex justify-between items-center text-indigo-400 font-bold uppercase text-[9px] tracking-widest shrink-0 leading-none">
-                   <span>Всего голосов: {totalVotes}</span>
-                   <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-green-500"></span> Синхронизация</span>
-                </div>
               </div>
             )}
 
@@ -177,24 +210,30 @@ const TeacherLectureControl = () => {
 
             {/* СЛАЙДЕР КОНТРОЛ */}
             <div className="p-4 bg-black/20 backdrop-blur-sm flex justify-between items-center px-10 text-white shrink-0 leading-none">
-               <button className="text-white/60 hover:text-white transition-colors flex items-center gap-2 font-bold uppercase text-[10px] tracking-widest leading-none cursor-pointer">
+               <button 
+                  onClick={() => sendMessage('SLIDE_CHANGE', { slide_number: 3 })}
+                  className="text-white/60 hover:text-white transition-colors flex items-center gap-2 font-bold uppercase text-[10px] tracking-widest leading-none cursor-pointer"
+                >
                   <ChevronLeft size={16}/> Назад
                </button>
-               <button className="text-white hover:text-indigo-400 transition-colors flex items-center gap-2 font-black uppercase text-[10px] tracking-widest leading-none cursor-pointer">
+               <button 
+                  onClick={() => sendMessage('SLIDE_CHANGE', { slide_number: 5 })}
+                  className="text-white hover:text-indigo-400 transition-colors flex items-center gap-2 font-black uppercase text-[10px] tracking-widest leading-none cursor-pointer"
+                >
                   Вперед <ChevronRight size={16}/>
                </button>
             </div>
           </div>
 
-          {/* ГРАФИК */}
+          {/* ГРАФИК ПОНИМАНИЯ (ОЖИВЛЕННЫЙ) */}
           <div className="h-40 bg-white rounded-[2rem] border border-slate-200 p-5 flex flex-col shadow-sm shrink-0 leading-none text-left">
             <h3 className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2 mb-3 leading-none text-left">
-              <BarChart3 size={12} /> Понимание аудитории (Real-time)
+              <BarChart3 size={12} /> Понимание аудитории (Счетчик кликов "Не понимаю")
             </h3>
             <div className="flex-1 w-full leading-none">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={analyticsData}>
-                  <Area type="monotone" dataKey="value" stroke="#f43f5e" strokeWidth={3} fill="#f43f5e15" />
+                  <Area type="step" dataKey="value" stroke="#f43f5e" strokeWidth={3} fill="#f43f5e15" isAnimationActive={true} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -212,7 +251,6 @@ const TeacherLectureControl = () => {
                 <Mic size={24} /> Пауза ASR
              </button>
           </div>
-
         </main>
       </div>
     </div>
