@@ -11,7 +11,6 @@ const StudentLecture = () => {
   const pinCode = localStorage.getItem('currentPin');
   const initialData = JSON.parse(localStorage.getItem('lectureData') || '{}');
 
-  // Если нет PIN-кода, выкидываем на главную
   useEffect(() => {
     if (!pinCode) navigate('/');
   }, [pinCode, navigate]);
@@ -20,18 +19,21 @@ const StudentLecture = () => {
   const { isConnected, lastMessage, sendMessage } = useWebSocket(pinCode, 'student');
   const [participantsCount, setParticipantsCount] = useState(0);
 
-  // Состояния для вопросов
+  // Вопросы
   const [questions, setQuestions] = useState(initialData.questions || []);
   const [newQuestionText, setNewQuestionText] = useState('');
 
-  // Состояния для кнопки "Не понимаю"
+  // Кулдаун
   const [isCooldown, setIsCooldown] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
 
-  // --- СОСТОЯНИЯ КВИЗА ---
+  // Квиз
   const [showQuiz, setShowQuiz] = useState(false); 
   const [quizTimer, setQuizTimer] = useState(15);
   const [selectedOption, setSelectedOption] = useState(null);
+
+  // ASR (Субтитры)
+  const [subtitles, setSubtitles] = useState("Ожидание речи преподавателя...");
 
   // Обработка входящих WS-сообщений
   useEffect(() => {
@@ -49,7 +51,11 @@ const StudentLecture = () => {
           q.id === lastMessage.data.question_id 
             ? { ...q, likes_count: lastMessage.data.likes_count } 
             : q
-        ).sort((a, b) => b.likes_count - a.likes_count)); // Сортируем по убыванию лайков
+        ).sort((a, b) => b.likes_count - a.likes_count));
+        break;
+      case 'ASR_TEXT':
+        // Добавляем новый текст субтитров
+        setSubtitles(lastMessage.data.text);
         break;
       default:
         break;
@@ -67,7 +73,7 @@ const StudentLecture = () => {
     return () => clearTimeout(timer);
   }, [timeLeft]);
 
-  // Таймер для Квиза
+  // Таймер Квиза
   useEffect(() => {
     let timer;
     if (showQuiz && quizTimer > 0) {
@@ -78,7 +84,6 @@ const StudentLecture = () => {
     return () => clearTimeout(timer);
   }, [showQuiz, quizTimer]);
 
-  // Действия студента
   const handleNotUnderstand = () => {
     if (isCooldown) return;
     sendMessage('CONFUSION_CLICK');
@@ -102,7 +107,6 @@ const StudentLecture = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans relative overflow-hidden text-left leading-none">
-      
       {/* 1. ГЛОБАЛЬНАЯ ШАПКА */}
       <header className="bg-white border-b border-slate-200 px-4 md:px-8 py-4 shrink-0 z-10">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -134,7 +138,6 @@ const StudentLecture = () => {
 
       {/* 2. ОСНОВНОЙ КОНТЕНТ */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10 overflow-hidden text-left">
-        
         <div className="lg:col-span-8 flex flex-col gap-6 overflow-hidden">
           {/* ASR: Живые субтитры */}
           <div className="bg-slate-900 rounded-3xl p-4 md:p-6 text-white shadow-xl shadow-indigo-900/10 border-l-4 border-rose-500">
@@ -142,8 +145,8 @@ const StudentLecture = () => {
               <Mic size={14} className="animate-pulse" />
               <span>Распознавание речи (Live)</span>
             </div>
-            <p className="text-sm md:text-lg italic text-slate-100 font-medium leading-relaxed">
-              "...и таким образом, реляционные базы данных позволяют нам гарантировать целостность данных через механизмы ACID..."
+            <p className="text-sm md:text-lg italic text-slate-100 font-medium leading-relaxed transition-all">
+              "{subtitles}"
             </p>
           </div>
 
@@ -194,7 +197,6 @@ const StudentLecture = () => {
       {/* 3. НИЖНЯЯ ПАНЕЛЬ */}
       <footer className="bg-white border-t border-slate-200 p-4 md:p-6 shrink-0 z-40">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row gap-4 items-center">
-          
           <button 
             onClick={handleNotUnderstand}
             disabled={isCooldown || !isConnected}

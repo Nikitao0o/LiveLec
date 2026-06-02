@@ -7,11 +7,10 @@ import {
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { useAudioRecorder } from '../hooks/useAudioRecorder';
 
 const TeacherLectureControl = () => {
   const navigate = useNavigate();
-  // Для прототипа используем фиксированный PIN или берем из localStorage, если он есть
-  // (В реальном приложении он будет передаваться через state роутера из Dashboard)
   const pinCode = localStorage.getItem('teacherPin') || '481516';
 
   // --- WEBSOCKETS ---
@@ -25,6 +24,12 @@ const TeacherLectureControl = () => {
   const [analyticsData, setAnalyticsData] = useState(
     Array.from({ length: 6 }).map((_, i) => ({ time: `-${5-i}m`, value: 0 }))
   );
+
+  // --- ЗАХВАТ АУДИО (ASR) ---
+  const { isRecording, toggleRecording } = useAudioRecorder((base64Chunk) => {
+    // Отправляем аудио чанк на бэкенд
+    sendMessage('AUDIO_CHUNK', { chunk: base64Chunk });
+  });
 
   // Обработка входящих WS-сообщений
   useEffect(() => {
@@ -45,11 +50,10 @@ const TeacherLectureControl = () => {
         ).sort((a, b) => b.likes_count - a.likes_count));
         break;
       case 'CONFUSION_UPDATE':
-        // Обновляем график понимания
         setAnalyticsData(prev => {
           const now = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
           const newData = [...prev, { time: now, value: lastMessage.data.total_confusion_count }];
-          if (newData.length > 10) newData.shift(); // Храним только последние 10 точек
+          if (newData.length > 10) newData.shift();
           return newData;
         });
         break;
@@ -78,13 +82,12 @@ const TeacherLectureControl = () => {
   };
 
   const finishLecture = () => {
-    // Тут можно добавить API запрос на остановку лекции
+    if (isRecording) toggleRecording(); // Выключаем микрофон при завершении
     navigate('/teacher/analytics');
   };
 
   return (
     <div className="h-screen bg-slate-100 flex flex-col font-sans overflow-hidden text-left leading-none">
-      
       {/* 1. HEADER */}
       <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between shrink-0 z-10">
         <div className="flex items-center gap-6 text-left">
@@ -121,7 +124,6 @@ const TeacherLectureControl = () => {
 
       {/* 2. MAIN CONTENT */}
       <div className="flex-1 flex overflow-hidden p-6 gap-6">
-        
         {/* ЛЕВО: ВОПРОСЫ */}
         <aside className="w-80 md:w-96 flex flex-col gap-4 shrink-0 text-left">
           <h3 className="font-black text-slate-800 uppercase tracking-widest text-xs flex items-center gap-2 px-2 leading-none text-left">
@@ -144,13 +146,10 @@ const TeacherLectureControl = () => {
 
         {/* ПРАВО: ПУЛЬТ УПРАВЛЕНИЯ */}
         <main className="flex-1 flex flex-col gap-6 overflow-hidden leading-none text-left">
-          
           <div className="flex-1 bg-indigo-900 rounded-[2.5rem] relative overflow-hidden flex flex-col shadow-2xl border-4 border-white leading-none">
-            
             {/* --- ОВЕРЛЕЙ КВИЗА --- */}
             {isQuizActive && (
               <div className="absolute inset-0 z-50 bg-indigo-950 flex flex-col p-8 text-white animate-in fade-in duration-300 text-left">
-                
                 {/* Шапка квиза */}
                 <div className="flex justify-between items-start mb-6 shrink-0 leading-none">
                   <div className="leading-none text-left">
@@ -166,14 +165,12 @@ const TeacherLectureControl = () => {
                     <X size={20} />
                   </button>
                 </div>
-
                 {/* ТЕКСТ ВОПРОСА */}
                 <div className="mb-6 shrink-0 text-left">
                    <h2 className="text-lg md:text-xl font-black leading-tight text-indigo-50 italic opacity-90 tracking-tight leading-none">
                       "Какое свойство ACID отвечает за неделимость транзакции?"
                    </h2>
                 </div>
-
                 <div className="flex-1 flex flex-col gap-4 overflow-y-auto pr-2 text-left pt-2">
                    {[
                      { id: 1, label: 'Atomicity', icon: <Triangle size={14} fill="currentColor" />, color: 'bg-rose-500', text: 'text-rose-500' },
@@ -200,14 +197,12 @@ const TeacherLectureControl = () => {
                 </div>
               </div>
             )}
-
             {/* КОНТЕНТ СЛАЙДА */}
             <div className="flex-1 flex items-center justify-center p-10 text-center text-white leading-none">
                <h2 className="text-4xl font-black uppercase tracking-tighter italic leading-tight leading-none">
                   Базы Данных: <br/> Архитектура ACID
                </h2>
             </div>
-
             {/* СЛАЙДЕР КОНТРОЛ */}
             <div className="p-4 bg-black/20 backdrop-blur-sm flex justify-between items-center px-10 text-white shrink-0 leading-none">
                <button 
@@ -225,7 +220,7 @@ const TeacherLectureControl = () => {
             </div>
           </div>
 
-          {/* ГРАФИК ПОНИМАНИЯ (ОЖИВЛЕННЫЙ) */}
+          {/* ГРАФИК ПОНИМАНИЯ */}
           <div className="h-40 bg-white rounded-[2rem] border border-slate-200 p-5 flex flex-col shadow-sm shrink-0 leading-none text-left">
             <h3 className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2 mb-3 leading-none text-left">
               <BarChart3 size={12} /> Понимание аудитории (Счетчик кликов "Не понимаю")
@@ -247,8 +242,16 @@ const TeacherLectureControl = () => {
              >
                 <PlayCircle size={24} /> Запустить Блиц-Опрос
              </button>
-             <button className="bg-white border-4 border-indigo-600 text-indigo-600 py-5 rounded-[2rem] font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-indigo-50 transition-all leading-none cursor-pointer">
-                <Mic size={24} /> Пауза ASR
+             <button 
+                onClick={toggleRecording}
+                className={`border-4 py-5 rounded-[2rem] font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 transition-all leading-none cursor-pointer ${
+                  isRecording 
+                    ? 'bg-rose-50 border-rose-500 text-rose-600 hover:bg-rose-100' 
+                    : 'bg-white border-indigo-600 text-indigo-600 hover:bg-indigo-50'
+                }`}
+              >
+                <Mic size={24} className={isRecording ? 'animate-pulse' : ''} /> 
+                {isRecording ? 'Остановить ASR' : 'Запуск ASR (Живой звук)'}
              </button>
           </div>
         </main>
