@@ -1,6 +1,7 @@
 services:
   db:
     image: postgres:15
+    restart: always
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
@@ -8,9 +9,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-
   server:
     build: ./server
+    restart: always
     ports:
       - "8000:8000"
     depends_on:
@@ -20,11 +21,11 @@ services:
 
   client:
     build: ./client
+    restart: always
     ports:
       - "3000:80"
     depends_on:
       - server
-
 
 volumes:
   postgres_data:

@@ -1,7 +1,6 @@
 import axios from 'axios';
 
 const api = axios.create({
-  // В разработке используем локальный бэкенд
   baseURL: 'http://localhost:8000/api', 
 });
 
