@@ -2,14 +2,52 @@ import asyncio
 import base64
 import logging
 import os
-import subprocess
+import re
 import tempfile
 
 from faster_whisper import WhisperModel
 
 logger = logging.getLogger(__name__)
 
-MIN_AUDIO_BYTES = 800
+MIN_AUDIO_BYTES = 1200
+WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
+
+_HALLUCINATION_PHRASES = (
+    "динамичная музыка",
+    "динамическая музыка",
+    "продолжение следует",
+    "субтитры",
+    "subtitles",
+    "thank you for watching",
+    "thanks for watching",
+    "аплодисменты",
+    "amara.org",
+    "редактор субтитров",
+    "корректор",
+)
+
+_HALLUCINATION_RE = re.compile(
+    "|".join(re.escape(p) for p in _HALLUCINATION_PHRASES),
+    re.IGNORECASE,
+)
+
+
+def _clean_asr_text(text: str) -> str:
+    if not text:
+        return ""
+
+    cleaned = _HALLUCINATION_RE.sub(" ", text)
+    cleaned = re.sub(
+        r"(?i)(\b(?:динамичн\w*|динамическ\w*)\s+музык\w*\b)(?:\s*,?\s*\1)+",
+        " ",
+        cleaned,
+    )
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" \"'.,;:-")
+    if len(cleaned) < 2:
+        return ""
+    if cleaned.lower() in _HALLUCINATION_PHRASES:
+        return ""
+    return cleaned
 
 
 class ASRService:
@@ -19,9 +57,11 @@ class ASRService:
         self._load_error: str | None = None
 
     def _load_sync(self) -> None:
-        logger.info("Загрузка модели Faster-Whisper (первый раз ~1–2 мин)...")
+        logger.info("Загрузка модели Faster-Whisper (%s)...", WHISPER_MODEL)
         try:
-            self.model = WhisperModel("small", device="cpu", compute_type="int8")
+            self.model = WhisperModel(
+                WHISPER_MODEL, device="cpu", compute_type="int8"
+            )
             self._load_error = None
             logger.info("Модель Whisper готова.")
         except Exception as exc:
@@ -45,52 +85,40 @@ class ASRService:
             audio_path,
             language="ru",
             condition_on_previous_text=False,
-            vad_filter=False,
+            vad_filter=True,
+            vad_parameters={
+                "min_silence_duration_ms": 400,
+                "speech_pad_ms": 120,
+                "threshold": 0.45,
+            },
+            beam_size=3,
+            best_of=1,
+            temperature=0.0,
+            no_speech_threshold=0.65,
+            log_prob_threshold=-0.7,
+            compression_ratio_threshold=2.0,
+            hallucination_silence_threshold=1.5,
         )
-        return " ".join(
-            segment.text.strip() for segment in segments if segment.text.strip()
-        ).strip()
+        parts: list[str] = []
+        for segment in segments:
+            phrase = segment.text.strip()
+            if not phrase:
+                continue
+            if segment.no_speech_prob > 0.55:
+                continue
+            if segment.avg_logprob < -0.85:
+                continue
+            cleaned = _clean_asr_text(phrase)
+            if cleaned:
+                parts.append(cleaned)
 
-    def _convert_to_wav(self, source_path: str) -> str | None:
-        wav_path = f"{source_path}.wav"
-        result = subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-i",
-                source_path,
-                "-ar",
-                "16000",
-                "-ac",
-                "1",
-                "-f",
-                "wav",
-                wav_path,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode != 0:
-            logger.warning("ffmpeg: %s", (result.stderr or "")[:400])
-            return None
-        return wav_path
+        return _clean_asr_text(" ".join(parts))
 
     def _transcribe_path(self, audio_path: str) -> str:
-        wav_path = self._convert_to_wav(audio_path)
-        if wav_path:
-            try:
-                return self._transcribe_sync(wav_path)
-            except Exception as exc:
-                logger.warning("Whisper on wav failed: %s", exc)
-            finally:
-                if os.path.exists(wav_path):
-                    os.remove(wav_path)
-
         try:
             return self._transcribe_sync(audio_path)
         except Exception as exc:
-            logger.error("Whisper on source failed: %s", exc)
+            logger.error("Whisper failed: %s", exc)
             return ""
 
     async def process_audio_chunk(self, base64_chunk: str) -> str:

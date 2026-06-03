@@ -72,7 +72,7 @@ def _render_pdf_to_slides(pdf_path: Path, slides_dir: Path) -> int:
     doc = fitz.open(pdf_path)
     try:
         for index, page in enumerate(doc):
-            pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(3, 3), alpha=False)
             slide_path = slides_dir / f"slide_{index + 1:03d}.png"
             pixmap.save(slide_path)
         return doc.page_count

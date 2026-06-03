@@ -23,6 +23,26 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+_asr_busy: dict[str, bool] = {}
+_asr_pending: dict[str, tuple[int, str]] = {}
+_last_asr_text: dict[str, str] = {}
+
+
+async def _schedule_asr(pin_code: str, lecture_id: int, base64_chunk: str) -> None:
+    """Один поток ASR на лекцию: при перегрузке берём только последний чанк."""
+    _asr_pending[pin_code] = (lecture_id, base64_chunk)
+    if _asr_busy.get(pin_code):
+        return
+    _asr_busy[pin_code] = True
+    try:
+        while pin_code in _asr_pending:
+            lec_id, chunk = _asr_pending.pop(pin_code)
+            await _run_asr_pipeline(pin_code, lec_id, chunk)
+    finally:
+        _asr_busy[pin_code] = False
+        if pin_code in _asr_pending:
+            asyncio.create_task(_schedule_asr(pin_code, *_asr_pending[pin_code]))
+
 def serialize_question(question: Question) -> dict:
     return {
         "id": question.id,
@@ -324,33 +344,34 @@ async def _run_asr_pipeline(pin_code: str, lecture_id: int, base64_chunk: str) -
     try:
         recognized_text = await asr_service.process_audio_chunk(base64_chunk)
         text = (recognized_text or "").strip()
-
+        if text and text.lower() == (_last_asr_text.get(pin_code) or "").lower():
+            return
         if text:
-            async with AsyncSessionLocal() as session:
-                session.add(
-                    TranscriptSegment(
-                        lecture_id=lecture_id,
-                        start_ms=0,
-                        end_ms=0,
-                        raw_text=text,
-                    )
-                )
-                await session.commit()
-
+            _last_asr_text[pin_code] = text
             await manager.broadcast_to_room(
                 pin_code,
                 {"type": "ASR_TEXT", "data": {"text": text}},
-                exclude_teacher=True,
             )
             await _notify_teacher_asr(
                 pin_code,
                 {"status": "ok", "text": text},
             )
+
+            async def _save_transcript() -> None:
+                async with AsyncSessionLocal() as session:
+                    session.add(
+                        TranscriptSegment(
+                            lecture_id=lecture_id,
+                            start_ms=0,
+                            end_ms=0,
+                            raw_text=text,
+                        )
+                    )
+                    await session.commit()
+
+            asyncio.create_task(_save_transcript())
         else:
-            await _notify_teacher_asr(
-                pin_code,
-                {"status": "empty", "message": "Речь не распознана в этом фрагменте"},
-            )
+            pass
     except Exception as exc:
         logger.exception("ASR pipeline failed for lecture %s: %s", lecture_id, exc)
         await _notify_teacher_asr(
@@ -392,8 +413,9 @@ async def handle_audio_chunk(
         chunk_bytes,
     )
 
-    await _notify_teacher_asr(
-        pin_code,
-        {"status": "processing", "message": "Распознавание..."},
-    )
-    asyncio.create_task(_run_asr_pipeline(pin_code, lecture.id, base64_chunk))
+    if not asr_service.model:
+        await _notify_teacher_asr(
+            pin_code,
+            {"status": "processing", "message": "Загрузка модели распознавания…"},
+        )
+    asyncio.create_task(_schedule_asr(pin_code, lecture.id, base64_chunk))

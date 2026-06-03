@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Users, MessageSquare, PlayCircle, Mic, 
   ChevronLeft, ChevronRight, XCircle, BarChart3, X,
-  Triangle, Square, Circle, Diamond, AlertCircle, Upload, FileText
+  Triangle, Square, Circle, Diamond, AlertCircle, Upload, FileText, ZoomIn
 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { useNavigate } from 'react-router-dom';
@@ -31,7 +31,9 @@ const TeacherLectureControl = () => {
   const [slideCount, setSlideCount] = useState(0);
   const [currentSlide, setCurrentSlide] = useState(1);
   const [isUploading, setIsUploading] = useState(false);
-  const [asrHint, setAsrHint] = useState('');
+  const [transcript, setTranscript] = useState('');
+  const [asrStatus, setAsrStatus] = useState('');
+  const [slideZoomOpen, setSlideZoomOpen] = useState(false);
 
   const showToast = (message) => {
     setToast(message);
@@ -143,17 +145,27 @@ const TeacherLectureControl = () => {
             [message.data.option_index]: prev[message.data.option_index] + 1,
           }));
           break;
+        case 'ASR_TEXT': {
+          const phrase = (message.data?.text || '').trim();
+          if (!phrase) break;
+          setTranscript((prev) => {
+            const base = prev || '';
+            return `${base} ${phrase}`.trim().slice(-1200);
+          });
+          setAsrStatus('');
+          break;
+        }
         case 'ASR_STATUS': {
-          const { status, text, message } = message.data || {};
-          if (status === 'ok' && text) {
-            setAsrHint(`Распознано: «${text.slice(0, 80)}${text.length > 80 ? '…' : ''}»`);
+          const { status, message: statusMessage } = message.data || {};
+          if (status === 'ok') {
+            setAsrStatus('');
           } else if (status === 'processing') {
-            setAsrHint('ASR: распознавание… (первый запуск может занять 1–2 мин)');
+            setAsrStatus(statusMessage || 'Распознавание…');
           } else if (status === 'error') {
-            setAsrHint(`ASR ошибка: ${message || 'неизвестно'}`);
-            showToast(message || 'Ошибка распознавания речи');
+            setAsrStatus(`Ошибка: ${statusMessage || 'неизвестно'}`);
+            showToast(statusMessage || 'Ошибка распознавания речи');
           } else if (status === 'empty') {
-            setAsrHint('ASR: говорите громче / ближе к микрофону');
+            setAsrStatus('Речь не распознана — говорите громче');
           }
           break;
         }
@@ -164,6 +176,15 @@ const TeacherLectureControl = () => {
 
     return subscribe(handleMessage);
   }, [subscribe]);
+
+  useEffect(() => {
+    if (!slideZoomOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setSlideZoomOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [slideZoomOpen]);
 
   useEffect(() => {
     let timer;
@@ -294,8 +315,8 @@ const TeacherLectureControl = () => {
           </div>
         </aside>
 
-        <main className="flex-1 flex flex-col gap-6 overflow-hidden leading-none text-left">
-          <div className="flex-1 bg-indigo-900 rounded-[2.5rem] relative overflow-hidden flex flex-col shadow-2xl border-4 border-white leading-none">
+        <main className="flex-1 flex flex-col gap-3 min-h-0 overflow-hidden leading-none text-left">
+          <div className="flex-1 min-h-0 bg-indigo-900 rounded-[2.5rem] relative overflow-hidden flex flex-col shadow-2xl border-4 border-white leading-none">
             
             {isQuizActive && (
               <div className="absolute inset-0 z-50 bg-indigo-950 flex flex-col p-8 text-white animate-in fade-in duration-300 text-left">
@@ -363,14 +384,24 @@ const TeacherLectureControl = () => {
               </label>
             </div>
 
-            <div className="flex-1 flex items-center justify-center p-6 pt-16 overflow-hidden">
+            <div className="flex-1 flex items-stretch justify-center p-2 pt-14 pb-2 min-h-0 w-full overflow-hidden">
               {slideCount > 0 && slideImageUrl ? (
-                <img
-                  key={slideImageUrl}
-                  src={slideImageUrl}
-                  alt={`Слайд ${currentSlide}`}
-                  className="max-w-full max-h-full object-contain rounded-xl shadow-2xl bg-white"
-                />
+                <button
+                  type="button"
+                  onClick={() => setSlideZoomOpen(true)}
+                  className="group relative flex-1 w-full h-full min-h-0 flex items-center justify-center rounded-xl cursor-zoom-in focus:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+                  title="Нажмите, чтобы увеличить слайд"
+                >
+                  <img
+                    key={slideImageUrl}
+                    src={slideImageUrl}
+                    alt={`Слайд ${currentSlide}`}
+                    className="w-full h-full object-contain rounded-xl shadow-2xl bg-white"
+                  />
+                  <span className="absolute bottom-20 right-6 flex items-center gap-1.5 bg-black/50 text-white text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                    <ZoomIn size={12} /> Увеличить
+                  </span>
+                </button>
               ) : (
                 <div className="text-center text-white px-8">
                   <FileText size={48} className="mx-auto mb-4 opacity-40" />
@@ -405,7 +436,9 @@ const TeacherLectureControl = () => {
           </div>
 
           <div className="h-40 bg-white rounded-[2rem] border border-slate-200 p-5 flex flex-col shadow-sm shrink-0 leading-none text-left">
-            <h3 className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2 mb-3 leading-none text-left"><BarChart3 size={12} /> Понимание аудитории (Счетчик кликов "Не понимаю")</h3>
+            <h3 className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2 mb-3 leading-none text-left">
+              <BarChart3 size={12} /> Понимание аудитории (Счетчик кликов &quot;Не понимаю&quot;)
+            </h3>
             <div className="flex-1 w-full leading-none">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={analyticsData}>
@@ -415,23 +448,17 @@ const TeacherLectureControl = () => {
             </div>
           </div>
 
-          {asrHint && (
-            <p className="text-[10px] font-bold text-slate-500 text-center uppercase tracking-wide shrink-0">
-              {asrHint}
-            </p>
-          )}
-
-          <div className="grid grid-cols-2 gap-4 shrink-0 leading-none">
+          <div className="grid grid-cols-2 gap-3 shrink-0 leading-none">
              <button 
                onClick={() => setIsQuizModalOpen(true)}
-               className="bg-indigo-600 text-white py-5 rounded-[2rem] font-black text-xs uppercase tracking-widest shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3 leading-none cursor-pointer"
+               className="bg-indigo-600 text-white py-4 rounded-[2rem] font-black text-xs uppercase tracking-widest shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3 leading-none cursor-pointer"
              >
                 <PlayCircle size={24} /> Запустить Блиц-Опрос
              </button>
              <button
                 type="button"
                 onClick={toggleRecording}
-                className={`border-4 py-5 rounded-[2rem] font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 transition-all leading-none cursor-pointer ${
+                className={`border-4 py-4 rounded-[2rem] font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 transition-all leading-none cursor-pointer ${
                   isRecording ? 'bg-rose-50 border-rose-500 text-rose-600 hover:bg-rose-100' : 'bg-white border-indigo-600 text-indigo-600 hover:bg-indigo-50'
                 }`}
               >
@@ -439,8 +466,65 @@ const TeacherLectureControl = () => {
                 {isRecording ? 'Остановить ASR' : 'Запуск ASR (Живой звук)'}
              </button>
           </div>
+
+          <div className="shrink-0 bg-white rounded-[2rem] border border-slate-200 shadow-sm flex flex-col max-h-28 overflow-hidden leading-normal">
+            <div className="px-5 py-2 border-b border-slate-100 flex items-center justify-between gap-2">
+              <h3 className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                <Mic size={12} /> Расшифровка лекции
+              </h3>
+              {isRecording && (
+                <span className="text-[9px] font-bold text-rose-500 uppercase tracking-widest animate-pulse">
+                  ASR в эфире
+                </span>
+              )}
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-3 text-sm font-medium text-slate-700 leading-snug">
+              {transcript ? (
+                <p>{transcript}</p>
+              ) : (
+                <p className="text-slate-400 italic text-xs">
+                  {isRecording
+                    ? 'Слушаю микрофон… текст появится через несколько секунд.'
+                    : 'Запустите ASR, чтобы видеть живую расшифровку (её же получают студенты).'}
+                </p>
+              )}
+            </div>
+            {asrStatus && (
+              <p className="px-5 pb-2 text-[10px] font-bold text-indigo-500 uppercase tracking-wide">
+                {asrStatus}
+              </p>
+            )}
+          </div>
         </main>
       </div>
+
+      {slideZoomOpen && slideImageUrl && (
+        <div
+          className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/95 p-4 md:p-8"
+          onClick={() => setSlideZoomOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Слайд ${currentSlide}`}
+        >
+          <button
+            type="button"
+            onClick={() => setSlideZoomOpen(false)}
+            className="absolute top-6 right-6 p-2 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors cursor-pointer"
+            aria-label="Закрыть"
+          >
+            <X size={28} />
+          </button>
+          <p className="absolute top-6 left-6 text-white/70 text-xs font-bold uppercase tracking-widest">
+            Слайд {currentSlide} / {slideCount} · Esc или клик вне слайда — закрыть
+          </p>
+          <img
+            src={slideImageUrl}
+            alt={`Слайд ${currentSlide}`}
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl bg-white"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
 
       {isQuizModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">

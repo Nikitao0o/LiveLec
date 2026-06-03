@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback } from 'react';
 
 const ASR_LOG = '[LiveLec ASR]';
-const SEGMENT_MS = 4000;
-const MIN_SEGMENT_BYTES = 2000;
+const SEGMENT_MS = 3000;
+const MIN_SEGMENT_BYTES = 2500;
 
 function logAsr(step, details = {}) {
   console.info(ASR_LOG, step, { step, ...details });
