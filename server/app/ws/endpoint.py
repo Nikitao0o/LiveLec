@@ -1,14 +1,21 @@
 import json
-from fastapi import WebSocket, WebSocketDisconnect, APIRouter, Depends
+from fastapi import WebSocket, WebSocketDisconnect, APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.core.database import get_db
 from app.models.lecture import Lecture, LectureStatus
 from app.models.question import Question
 from app.models.analytics import Analytics
-from app.models.transcript import TranscriptSegment  
+from app.models.confusion_session import ConfusionSession
+from app.models.transcript import TranscriptSegment
 from app.ws.manager import manager
-from app.services.asr import asr_service  
+from app.services.asr import asr_service
+from app.services.confusion import (
+    CONFUSION_COOLDOWN_SECONDS,
+    get_confusion_cooldown_remaining,
+    get_confusion_session,
+    _utc_now,
+)
 
 router = APIRouter()
 
@@ -27,7 +34,8 @@ async def websocket_endpoint(
     websocket: WebSocket,
     pin_code: str,
     user_type: str = "student",
-    db: AsyncSession = Depends(get_db)
+    session_id: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     WebSocket эндпоинт для подключения к лекции
@@ -48,7 +56,10 @@ async def websocket_endpoint(
         return
     
     # Подключаем клиента
-    await manager.connect(websocket, pin_code, user_type)
+    normalized_session_id = (session_id or "").strip() or None
+    await manager.connect(
+        websocket, pin_code, user_type, session_id=normalized_session_id
+    )
 
     if user_type == "student":
         student_count = manager.count_students(pin_code)
@@ -58,19 +69,23 @@ async def websocket_endpoint(
     
     try:
         # Подтверждение подключения
-        await websocket.send_json({
-            "type": "CONNECTED",
-            "data": {
-                "lecture_id": lecture.id,
-                "pin_code": pin_code,
-                "user_type": user_type,
-                "title": lecture.title,
-                "discipline": lecture.discipline,
-                "status": lecture.status.value,
-                "slide_count": lecture.slide_count or 0,
-                "current_slide": lecture.current_slide or 1,
-            }
-        })
+        connected_payload = {
+            "lecture_id": lecture.id,
+            "pin_code": pin_code,
+            "user_type": user_type,
+            "title": lecture.title,
+            "discipline": lecture.discipline,
+            "status": lecture.status.value,
+            "slide_count": lecture.slide_count or 0,
+            "current_slide": lecture.current_slide or 1,
+        }
+        if user_type == "student" and normalized_session_id:
+            connected_payload["confusion_cooldown_seconds"] = (
+                await get_confusion_cooldown_remaining(
+                    db, lecture.id, normalized_session_id
+                )
+            )
+        await websocket.send_json({"type": "CONNECTED", "data": connected_payload})
         if user_type == "student" and lecture.slide_count:
             await websocket.send_json({
                 "type": "SLIDE_CHANGE",
@@ -201,21 +216,44 @@ async def handle_like_question(pin_code: str, data: dict, db: AsyncSession):
 
 async def handle_confusion_click(pin_code: str, data: dict, db: AsyncSession):
     """Обработка нажатия 'Не понимаю'"""
-    # Получаем lecture_id по pin_code
+    session_id = (data.get("session_id") or "").strip()
+    if not session_id:
+        return
+
     result = await db.execute(select(Lecture).where(Lecture.pin_code == pin_code))
     lecture = result.scalar_one_or_none()
-    
+
     if not lecture:
         return
     if lecture.status == LectureStatus.FINISHED:
         return
-    
-    # Сохраняем в аналитику
-    new_analytics = Analytics(
-        lecture_id=lecture.id,
-        confusion_count=1
-    )
-    db.add(new_analytics)
+
+    remaining = await get_confusion_cooldown_remaining(db, lecture.id, session_id)
+    if remaining > 0:
+        await manager.send_to_student_session(
+            pin_code,
+            session_id,
+            {
+                "type": "CONFUSION_COOLDOWN",
+                "data": {"cooldown_seconds": remaining},
+            },
+        )
+        return
+
+    now = _utc_now()
+    session_row = await get_confusion_session(db, lecture.id, session_id)
+    if session_row:
+        session_row.last_confusion_at = now
+    else:
+        db.add(
+            ConfusionSession(
+                lecture_id=lecture.id,
+                session_id=session_id,
+                last_confusion_at=now,
+            )
+        )
+
+    db.add(Analytics(lecture_id=lecture.id, confusion_count=1))
     await db.commit()
 
     total_res = await db.execute(
@@ -225,14 +263,25 @@ async def handle_confusion_click(pin_code: str, data: dict, db: AsyncSession):
     )
     total_confusion = int(total_res.scalar_one())
 
-    await manager.broadcast_to_teacher(pin_code, {
-        "type": "CONFUSION_UPDATE",
-        "data": {
-            "confusion_count": 1,
-            "total_confusion_count": total_confusion,
-            "lecture_id": lecture.id,
-        }
-    })
+    await manager.broadcast_to_teacher(
+        pin_code,
+        {
+            "type": "CONFUSION_UPDATE",
+            "data": {
+                "confusion_count": 1,
+                "total_confusion_count": total_confusion,
+                "lecture_id": lecture.id,
+            },
+        },
+    )
+    await manager.send_to_student_session(
+        pin_code,
+        session_id,
+        {
+            "type": "CONFUSION_ACK",
+            "data": {"cooldown_seconds": CONFUSION_COOLDOWN_SECONDS},
+        },
+    )
 
 
 async def handle_slide_change(pin_code: str, data: dict, db: AsyncSession):

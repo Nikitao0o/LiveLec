@@ -4,6 +4,7 @@ from app.models.question import Question
 from app.models.analytics import Analytics
 from app.models.transcript import TranscriptSegment, CleanMethod
 from app.models.discipline import TeacherDiscipline
+from app.models.confusion_session import ConfusionSession
 
 __all__ = [
     "User",
@@ -14,4 +15,5 @@ __all__ = [
     "TranscriptSegment",
     "CleanMethod",
     "TeacherDiscipline",
+    "ConfusionSession",
 ]

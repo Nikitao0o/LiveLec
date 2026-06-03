@@ -7,21 +7,23 @@ import { useWebSocket } from '../hooks/useWebSocket';
 import { useNavigate } from 'react-router-dom';
 import { getSlideImageUrl } from '../utils/slides';
 import api from '../api';
-
-const COOLDOWN_SECONDS = 60;
-
-const getCooldownKey = (pin) => `confusion_cooldown_${pin}`;
+import { getStudentSessionId } from '../utils/studentSession';
 
 const StudentLecture = () => {
   const navigate = useNavigate();
   const pinCode = localStorage.getItem('currentPin');
+  const studentSessionId = getStudentSessionId();
   const initialData = JSON.parse(localStorage.getItem('lectureData') || '{}');
 
   useEffect(() => {
     if (!pinCode) navigate('/');
   }, [pinCode, navigate]);
 
-  const { isConnected, sendMessage, subscribe } = useWebSocket(pinCode, 'student');
+  const { isConnected, sendMessage, subscribe } = useWebSocket(
+    pinCode,
+    'student',
+    studentSessionId
+  );
   const [participantsCount, setParticipantsCount] = useState(0);
   const [questions, setQuestions] = useState(initialData.questions || []);
   const [newQuestionText, setNewQuestionText] = useState('');
@@ -39,6 +41,17 @@ const StudentLecture = () => {
 
   const slideImageUrl = getSlideImageUrl(lectureId, currentSlide, pinCode);
 
+  const applyCooldown = (seconds) => {
+    const remaining = Number(seconds) || 0;
+    if (remaining > 0) {
+      setIsCooldown(true);
+      setTimeLeft(remaining);
+    } else {
+      setIsCooldown(false);
+      setTimeLeft(0);
+    }
+  };
+
   useEffect(() => {
     const lectureIdToLoad = lectureId || initialData.lecture_id;
     if (!lectureIdToLoad) return;
@@ -50,20 +63,6 @@ const StudentLecture = () => {
   }, [lectureId, initialData.lecture_id]);
 
   useEffect(() => {
-    if (!pinCode) return;
-    const raw = sessionStorage.getItem(getCooldownKey(pinCode));
-    if (!raw) return;
-    const expiresAt = Number(raw);
-    const remaining = Math.ceil((expiresAt - Date.now()) / 1000);
-    if (remaining > 0) {
-      setIsCooldown(true);
-      setTimeLeft(remaining);
-    } else {
-      sessionStorage.removeItem(getCooldownKey(pinCode));
-    }
-  }, [pinCode]);
-
-  useEffect(() => {
     const handleMessage = (message) => {
       switch (message.type) {
         case 'CONNECTED':
@@ -72,6 +71,13 @@ const StudentLecture = () => {
             setSlideCount(message.data.slide_count);
             setCurrentSlide(message.data.current_slide || 1);
           }
+          if (typeof message.data.confusion_cooldown_seconds === 'number') {
+            applyCooldown(message.data.confusion_cooldown_seconds);
+          }
+          break;
+        case 'CONFUSION_ACK':
+        case 'CONFUSION_COOLDOWN':
+          applyCooldown(message.data.cooldown_seconds);
           break;
         case 'SLIDE_CHANGE':
           setCurrentSlide(message.data.slide_number);
@@ -98,9 +104,15 @@ const StudentLecture = () => {
               .sort((a, b) => b.likes_count - a.likes_count)
           );
           break;
-        case 'ASR_TEXT':
-          setSubtitles(message.data.text);
+        case 'ASR_TEXT': {
+          const phrase = (message.data.text || '').trim();
+          if (!phrase) break;
+          setSubtitles((prev) => {
+            if (!prev || prev.startsWith('Ожидание')) return phrase;
+            return `${prev} ${phrase}`.slice(-600);
+          });
           break;
+        }
         case 'QUIZ_START':
           setQuizData(message.data);
           setQuizTimer(message.data.duration);
@@ -121,10 +133,9 @@ const StudentLecture = () => {
       timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
     } else {
       setIsCooldown(false);
-      if (pinCode) sessionStorage.removeItem(getCooldownKey(pinCode));
     }
     return () => clearTimeout(timer);
-  }, [timeLeft, pinCode]);
+  }, [timeLeft]);
 
   useEffect(() => {
     let timer;
@@ -137,16 +148,8 @@ const StudentLecture = () => {
   }, [showQuiz, quizTimer]);
 
   const handleNotUnderstand = () => {
-    if (isCooldown) return;
-    sendMessage('CONFUSION_CLICK');
-    setIsCooldown(true);
-    setTimeLeft(COOLDOWN_SECONDS);
-    if (pinCode) {
-      sessionStorage.setItem(
-        getCooldownKey(pinCode),
-        String(Date.now() + COOLDOWN_SECONDS * 1000)
-      );
-    }
+    if (isCooldown || !isConnected) return;
+    sendMessage('CONFUSION_CLICK', { session_id: studentSessionId });
   };
 
   const handleSendQuestion = () => {

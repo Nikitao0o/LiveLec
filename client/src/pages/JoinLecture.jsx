@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { ArrowRight, GraduationCap, AlertCircle, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom'; 
 import api from '../api';
+import { getStudentSessionId } from '../utils/studentSession';
 
 const JoinLecture = () => {
   const [pin, setPin] = useState(['', '', '', '', '', '']);
@@ -45,6 +46,7 @@ const JoinLecture = () => {
         pin_code: currentPin
       });
       
+      getStudentSessionId();
       const lectureData = response.data;
       localStorage.setItem('currentPin', lectureData.pin_code || currentPin);
       localStorage.setItem('lectureData', JSON.stringify(lectureData));

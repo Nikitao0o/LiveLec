@@ -32,7 +32,15 @@ app.include_router(ws_router)
 
 @app.on_event("startup")
 async def startup():
-    from app.models import User, Lecture, Question, Analytics, TranscriptSegment, TeacherDiscipline
+    from app.models import (
+        User,
+        Lecture,
+        Question,
+        Analytics,
+        TranscriptSegment,
+        TeacherDiscipline,
+        ConfusionSession,
+    )
     
     # Пытаемся подключиться к БД 5 раз с интервалом, давая PostgreSQL время на запуск
     for _ in range(5):

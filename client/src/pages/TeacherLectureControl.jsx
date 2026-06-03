@@ -19,6 +19,8 @@ const TeacherLectureControl = () => {
   const fileInputRef = useRef(null);
 
   const { isConnected, sendMessage, subscribe } = useWebSocket(pinCode, 'teacher');
+  const isConnectedRef = useRef(isConnected);
+  isConnectedRef.current = isConnected;
   const [participantsCount, setParticipantsCount] = useState(0);
   const [questions, setQuestions] = useState([]);
   const [analyticsData, setAnalyticsData] = useState(
@@ -36,7 +38,13 @@ const TeacherLectureControl = () => {
   };
 
   const { isRecording, toggleRecording } = useAudioRecorder(
-    (base64Chunk) => sendMessage('AUDIO_CHUNK', { chunk: base64Chunk }),
+    (base64Chunk) => {
+      if (!isConnectedRef.current) {
+        showToast('Нет связи с сервером — субтитры студентам не отправляются.');
+        return;
+      }
+      sendMessage('AUDIO_CHUNK', { chunk: base64Chunk });
+    },
     (errorMsg) => showToast(errorMsg)
   );
 
@@ -68,6 +76,23 @@ const TeacherLectureControl = () => {
     api
       .get(`/questions/lecture/${lectureId}`)
       .then((res) => setQuestions(res.data || []))
+      .catch(() => {});
+  }, [lectureId]);
+
+  useEffect(() => {
+    if (!lectureId) return;
+    api
+      .get(`/lectures/${lectureId}/analytics`)
+      .then((res) => {
+        const raw = res.data?.chart_data || [];
+        if (!raw.length) return;
+        let total = 0;
+        const points = raw.map((item) => {
+          total += item.confusion || 0;
+          return { time: item.time, value: total };
+        });
+        setAnalyticsData(points);
+      })
       .catch(() => {});
   }, [lectureId]);
 
@@ -382,7 +407,8 @@ const TeacherLectureControl = () => {
              >
                 <PlayCircle size={24} /> Запустить Блиц-Опрос
              </button>
-             <button 
+             <button
+                type="button"
                 onClick={toggleRecording}
                 className={`border-4 py-5 rounded-[2rem] font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 transition-all leading-none cursor-pointer ${
                   isRecording ? 'bg-rose-50 border-rose-500 text-rose-600 hover:bg-rose-100' : 'bg-white border-indigo-600 text-indigo-600 hover:bg-indigo-50'

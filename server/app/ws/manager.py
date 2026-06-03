@@ -9,7 +9,13 @@ class ConnectionManager:
         # active_connections: pin_code -> список подключений
         self.active_connections: Dict[str, List[dict]] = {}
     
-    async def connect(self, websocket: WebSocket, pin_code: str, user_type: str):
+    async def connect(
+        self,
+        websocket: WebSocket,
+        pin_code: str,
+        user_type: str,
+        session_id: str | None = None,
+    ):
         """Подключение клиента к комнате по PIN коду"""
         await websocket.accept()
         
@@ -18,7 +24,8 @@ class ConnectionManager:
         
         self.active_connections[pin_code].append({
             "websocket": websocket,
-            "user_type": user_type  # "teacher" или "student"
+            "user_type": user_type,
+            "session_id": session_id if user_type == "student" else None,
         })
         
         print(f"Подключен {user_type} к лекции {pin_code}")
@@ -48,6 +55,16 @@ class ConnectionManager:
                 except:
                     pass
     
+    async def send_to_student_session(self, pin_code: str, session_id: str, message: dict):
+        if pin_code not in self.active_connections:
+            return
+        for conn in self.active_connections[pin_code]:
+            if conn["user_type"] == "student" and conn.get("session_id") == session_id:
+                try:
+                    await conn["websocket"].send_json(message)
+                except Exception:
+                    pass
+
     async def broadcast_to_teacher(self, pin_code: str, message: dict):
         """Отправить сообщение только преподавателю в комнате"""
         if pin_code in self.active_connections:

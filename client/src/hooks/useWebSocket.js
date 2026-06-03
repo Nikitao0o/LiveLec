@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-export const useWebSocket = (pinCode, userType) => {
+export const useWebSocket = (pinCode, userType, sessionId = null) => {
   const [isConnected, setIsConnected] = useState(false);
   const [lastMessage, setLastMessage] = useState(null);
   const ws = useRef(null);
@@ -16,7 +16,11 @@ export const useWebSocket = (pinCode, userType) => {
     if (!normalizedPin || normalizedPin === '---') return;
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.host}/ws/${normalizedPin}?user_type=${userType}`;
+    const sessionQuery =
+      userType === 'student' && sessionId
+        ? `&session_id=${encodeURIComponent(sessionId)}`
+        : '';
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws/${normalizedPin}?user_type=${userType}${sessionQuery}`;
     ws.current = new WebSocket(wsUrl);
 
     ws.current.onopen = () => setIsConnected(true);
@@ -43,7 +47,7 @@ export const useWebSocket = (pinCode, userType) => {
         ws.current.close();
       }
     };
-  }, [pinCode, userType]);
+  }, [pinCode, userType, sessionId]);
 
   const sendMessage = useCallback((type, data = {}) => {
     if (ws.current?.readyState === WebSocket.OPEN) {
