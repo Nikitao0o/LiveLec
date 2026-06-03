@@ -1,9 +1,10 @@
+import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import engine, Base
 from app.api import auth_router, lectures_router, questions_router, analytics_router
-from app.ws import ws_router
+from app.ws.endpoint import router as ws_router 
 
 app = FastAPI(
     title="LiveLec API",
@@ -19,19 +20,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Подключение роутеров
+# Подключение REST-роутеров
 app.include_router(auth_router)
 app.include_router(lectures_router)
 app.include_router(questions_router)
 app.include_router(analytics_router)
+
+# Подключение WebSocket-роутера
 app.include_router(ws_router)
 
 @app.on_event("startup")
 async def startup():
     from app.models import User, Lecture, Question, Analytics, TranscriptSegment
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    print("База данных готова")
+    
+    # Пытаемся подключиться к БД 5 раз с интервалом, давая PostgreSQL время на запуск
+    for _ in range(5):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            print("База данных успешно подключена и готова!")
+            break
+        except Exception as e:
+            print("Ожидание запуска базы данных (PostgreSQL)...")
+            await asyncio.sleep(3)
 
 @app.on_event("shutdown")
 async def shutdown():
