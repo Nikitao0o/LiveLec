@@ -46,7 +46,7 @@ const JoinLecture = () => {
       });
       
       const lectureData = response.data;
-      localStorage.setItem('currentPin', currentPin);
+      localStorage.setItem('currentPin', lectureData.pin_code || currentPin);
       localStorage.setItem('lectureData', JSON.stringify(lectureData));
       
       navigate('/lecture');

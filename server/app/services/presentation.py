@@ -21,12 +21,35 @@ def clear_slides(lecture_id: int) -> None:
     slides_dir.mkdir(parents=True, exist_ok=True)
 
 
+def _libreoffice_binary() -> str:
+    for name in ("libreoffice", "soffice"):
+        path = shutil.which(name)
+        if path:
+            return path
+    raise RuntimeError(
+        "LibreOffice не установлен. Для PPTX установите LibreOffice или используйте Docker-образ сервера."
+    )
+
+
+def _find_converted_pdf(source: Path, output_dir: Path) -> Path:
+    expected = output_dir / f"{source.stem}.pdf"
+    if expected.exists():
+        return expected
+    pdfs = sorted(output_dir.rglob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if pdfs:
+        return pdfs[0]
+    raise RuntimeError("Файл PDF после конвертации не найден")
+
+
 def _convert_pptx_to_pdf(source: Path, output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
+    binary = _libreoffice_binary()
     result = subprocess.run(
         [
-            "libreoffice",
+            binary,
             "--headless",
+            "--invisible",
+            "--nologo",
             "--convert-to",
             "pdf",
             "--outdir",
@@ -38,16 +61,10 @@ def _convert_pptx_to_pdf(source: Path, output_dir: Path) -> Path:
         timeout=120,
     )
     if result.returncode != 0:
-        logger.error("LibreOffice error: %s", result.stderr)
+        logger.error("LibreOffice error (code %s): %s", result.returncode, result.stderr)
         raise RuntimeError("Не удалось конвертировать PPTX в PDF")
 
-    pdf_path = output_dir / f"{source.stem}.pdf"
-    if not pdf_path.exists():
-        pdfs = list(output_dir.glob("*.pdf"))
-        if not pdfs:
-            raise RuntimeError("Файл PDF после конвертации не найден")
-        pdf_path = pdfs[0]
-    return pdf_path
+    return _find_converted_pdf(source, output_dir)
 
 
 def _render_pdf_to_slides(pdf_path: Path, slides_dir: Path) -> int:

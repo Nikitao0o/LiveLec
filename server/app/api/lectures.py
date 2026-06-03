@@ -51,9 +51,11 @@ def serialize_lecture(lecture: Lecture) -> LectureResponse:
 def serialize_question(question: Question) -> QuestionResponse:
     return QuestionResponse(
         id=question.id,
+        lecture_id=question.lecture_id,
         content=question.content,
         likes_count=question.likes_count,
-        created_at=question.created_at
+        is_answered=question.is_answered,
+        created_at=question.created_at,
     )
 
 async def get_owned_lecture(lecture_id: int, teacher_id: int, db: AsyncSession) -> Lecture:
@@ -106,13 +108,24 @@ async def join_lecture(join_data: LectureJoin, db: AsyncSession = Depends(get_db
     if not lecture:
         raise HTTPException(status_code=404, detail="Lecture not found")
 
+    questions_result = await db.execute(
+        select(Question)
+        .where(Question.lecture_id == lecture.id)
+        .order_by(Question.likes_count.desc(), Question.created_at.asc())
+    )
+    questions = [
+        serialize_question(question) for question in questions_result.scalars().all()
+    ]
+
     return LectureJoinResponse(
         lecture_id=lecture.id,
         title=lecture.title,
         discipline=lecture.discipline,
         pin_code=lecture.pin_code,
         status=lecture.status.value,
-        questions=[]
+        slide_count=lecture.slide_count or 0,
+        current_slide=lecture.current_slide or 1,
+        questions=questions,
     )
 
 @router.post("/{lecture_id}/finish", response_model=LectureResponse)
@@ -234,6 +247,20 @@ async def upload_presentation(
     lecture.current_slide = 1 if slide_count > 0 else 0
     await db.commit()
     await db.refresh(lecture)
+
+    if lecture.slide_count > 0:
+        await manager.broadcast_to_room(
+            lecture.pin_code,
+            {
+                "type": "SLIDE_CHANGE",
+                "data": {
+                    "slide_number": lecture.current_slide,
+                    "total_slides": lecture.slide_count,
+                    "lecture_id": lecture.id,
+                },
+            },
+            exclude_teacher=True,
+        )
 
     return PresentationMeta(slide_count=lecture.slide_count, current_slide=lecture.current_slide)
 

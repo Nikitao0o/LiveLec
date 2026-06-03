@@ -6,6 +6,11 @@ import {
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useNavigate } from 'react-router-dom';
 import { getSlideImageUrl } from '../utils/slides';
+import api from '../api';
+
+const COOLDOWN_SECONDS = 60;
+
+const getCooldownKey = (pin) => `confusion_cooldown_${pin}`;
 
 const StudentLecture = () => {
   const navigate = useNavigate();
@@ -16,7 +21,7 @@ const StudentLecture = () => {
     if (!pinCode) navigate('/');
   }, [pinCode, navigate]);
 
-  const { isConnected, lastMessage, sendMessage } = useWebSocket(pinCode, 'student');
+  const { isConnected, sendMessage, subscribe } = useWebSocket(pinCode, 'student');
   const [participantsCount, setParticipantsCount] = useState(0);
   const [questions, setQuestions] = useState(initialData.questions || []);
   const [newQuestionText, setNewQuestionText] = useState('');
@@ -29,57 +34,97 @@ const StudentLecture = () => {
   const [quizTimer, setQuizTimer] = useState(0);
   const [selectedOption, setSelectedOption] = useState(null);
   const [lectureId, setLectureId] = useState(initialData.lecture_id || null);
-  const [currentSlide, setCurrentSlide] = useState(1);
-  const [slideCount, setSlideCount] = useState(0);
+  const [currentSlide, setCurrentSlide] = useState(initialData.current_slide || 1);
+  const [slideCount, setSlideCount] = useState(initialData.slide_count || 0);
 
   const slideImageUrl = getSlideImageUrl(lectureId, currentSlide, pinCode);
 
   useEffect(() => {
-    if (!lastMessage) return;
-    switch (lastMessage.type) {
-      case 'CONNECTED':
-        if (lastMessage.data.lecture_id) setLectureId(lastMessage.data.lecture_id);
-        if (lastMessage.data.slide_count) {
-          setSlideCount(lastMessage.data.slide_count);
-          setCurrentSlide(lastMessage.data.current_slide || 1);
-        }
-        break;
-      case 'SLIDE_CHANGE':
-        setCurrentSlide(lastMessage.data.slide_number);
-        if (lastMessage.data.total_slides) setSlideCount(lastMessage.data.total_slides);
-        if (lastMessage.data.lecture_id) setLectureId(lastMessage.data.lecture_id);
-        break;
-      case 'PARTICIPANTS_UPDATE':
-        setParticipantsCount(lastMessage.data.count);
-        break;
-      case 'NEW_QUESTION':
-        setQuestions((prev) => [lastMessage.data, ...prev]);
-        break;
-      case 'LIKE_UPDATE':
-        setQuestions((prev) => prev.map(q => 
-          q.id === lastMessage.data.question_id ? { ...q, likes_count: lastMessage.data.likes_count } : q
-        ).sort((a, b) => b.likes_count - a.likes_count));
-        break;
-      case 'ASR_TEXT':
-        setSubtitles(lastMessage.data.text);
-        break;
-      case 'QUIZ_START':
-        setQuizData(lastMessage.data);
-        setQuizTimer(lastMessage.data.duration);
-        setShowQuiz(true);
-        setSelectedOption(null);
-        break;
-      default:
-        break;
+    const lectureIdToLoad = lectureId || initialData.lecture_id;
+    if (!lectureIdToLoad) return;
+
+    api
+      .get(`/questions/lecture/${lectureIdToLoad}`)
+      .then((res) => setQuestions(res.data || []))
+      .catch(() => {});
+  }, [lectureId, initialData.lecture_id]);
+
+  useEffect(() => {
+    if (!pinCode) return;
+    const raw = sessionStorage.getItem(getCooldownKey(pinCode));
+    if (!raw) return;
+    const expiresAt = Number(raw);
+    const remaining = Math.ceil((expiresAt - Date.now()) / 1000);
+    if (remaining > 0) {
+      setIsCooldown(true);
+      setTimeLeft(remaining);
+    } else {
+      sessionStorage.removeItem(getCooldownKey(pinCode));
     }
-  }, [lastMessage]);
+  }, [pinCode]);
+
+  useEffect(() => {
+    const handleMessage = (message) => {
+      switch (message.type) {
+        case 'CONNECTED':
+          if (message.data.lecture_id) setLectureId(message.data.lecture_id);
+          if (message.data.slide_count) {
+            setSlideCount(message.data.slide_count);
+            setCurrentSlide(message.data.current_slide || 1);
+          }
+          break;
+        case 'SLIDE_CHANGE':
+          setCurrentSlide(message.data.slide_number);
+          if (message.data.total_slides) setSlideCount(message.data.total_slides);
+          if (message.data.lecture_id) setLectureId(message.data.lecture_id);
+          break;
+        case 'PARTICIPANTS_UPDATE':
+          setParticipantsCount(message.data.count);
+          break;
+        case 'NEW_QUESTION':
+          setQuestions((prev) => {
+            if (prev.some((q) => q.id === message.data.id)) return prev;
+            return [message.data, ...prev];
+          });
+          break;
+        case 'LIKE_UPDATE':
+          setQuestions((prev) =>
+            prev
+              .map((q) =>
+                q.id === message.data.question_id
+                  ? { ...q, likes_count: message.data.likes_count }
+                  : q
+              )
+              .sort((a, b) => b.likes_count - a.likes_count)
+          );
+          break;
+        case 'ASR_TEXT':
+          setSubtitles(message.data.text);
+          break;
+        case 'QUIZ_START':
+          setQuizData(message.data);
+          setQuizTimer(message.data.duration);
+          setShowQuiz(true);
+          setSelectedOption(null);
+          break;
+        default:
+          break;
+      }
+    };
+
+    return subscribe(handleMessage);
+  }, [subscribe]);
 
   useEffect(() => {
     let timer;
-    if (timeLeft > 0) timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
-    else setIsCooldown(false);
+    if (timeLeft > 0) {
+      timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
+    } else {
+      setIsCooldown(false);
+      if (pinCode) sessionStorage.removeItem(getCooldownKey(pinCode));
+    }
     return () => clearTimeout(timer);
-  }, [timeLeft]);
+  }, [timeLeft, pinCode]);
 
   useEffect(() => {
     let timer;
@@ -95,7 +140,13 @@ const StudentLecture = () => {
     if (isCooldown) return;
     sendMessage('CONFUSION_CLICK');
     setIsCooldown(true);
-    setTimeLeft(60);
+    setTimeLeft(COOLDOWN_SECONDS);
+    if (pinCode) {
+      sessionStorage.setItem(
+        getCooldownKey(pinCode),
+        String(Date.now() + COOLDOWN_SECONDS * 1000)
+      );
+    }
   };
 
   const handleSendQuestion = () => {
@@ -163,6 +214,7 @@ const StudentLecture = () => {
             <div className="flex-1 bg-slate-950 flex items-center justify-center p-4 overflow-hidden">
               {slideCount > 0 && slideImageUrl ? (
                 <img
+                  key={slideImageUrl}
                   src={slideImageUrl}
                   alt={`Слайд ${currentSlide}`}
                   className="max-w-full max-h-full object-contain rounded-lg"

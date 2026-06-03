@@ -1,7 +1,7 @@
 import json
 from fastapi import WebSocket, WebSocketDisconnect, APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.core.database import get_db
 from app.models.lecture import Lecture, LectureStatus
 from app.models.question import Question
@@ -217,13 +217,20 @@ async def handle_confusion_click(pin_code: str, data: dict, db: AsyncSession):
     )
     db.add(new_analytics)
     await db.commit()
-    
-    # Отправляем уведомление только преподавателю
+
+    total_res = await db.execute(
+        select(func.coalesce(func.sum(Analytics.confusion_count), 0)).where(
+            Analytics.lecture_id == lecture.id
+        )
+    )
+    total_confusion = int(total_res.scalar_one())
+
     await manager.broadcast_to_teacher(pin_code, {
         "type": "CONFUSION_UPDATE",
         "data": {
             "confusion_count": 1,
-            "lecture_id": lecture.id
+            "total_confusion_count": total_confusion,
+            "lecture_id": lecture.id,
         }
     })
 

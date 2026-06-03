@@ -6,7 +6,7 @@ WORKDIR /app
 # Системные зависимости (если нужны для psycopg2 и т.п.)
 RUN apt-get update && apt-get install -y \
     gcc ffmpeg \
-    libreoffice-core libreoffice-writer-nogui \
+    libreoffice-core libreoffice-writer-nogui libreoffice-impress-nogui \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /app/uploads/lectures

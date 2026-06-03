@@ -7,13 +7,28 @@ function isMicrophoneContextAvailable() {
 }
 
 async function requestMicrophoneStream() {
+  const constraintsList = [
+    { audio: { echoCancellation: true, noiseSuppression: true } },
+    { audio: true },
+  ];
+
   if (navigator.mediaDevices?.getUserMedia) {
-    return navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-      },
-    });
+    let lastError = null;
+    for (const constraints of constraintsList) {
+      try {
+        return await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (err) {
+        lastError = err;
+        const retryable =
+          err?.name === 'NotFoundError' ||
+          err?.name === 'DevicesNotFoundError' ||
+          err?.name === 'OverconstrainedError';
+        if (!retryable) {
+          throw err;
+        }
+      }
+    }
+    if (lastError) throw lastError;
   }
 
   const legacyGetUserMedia =
@@ -53,7 +68,7 @@ function mapMicError(err) {
     return 'Доступ к микрофону запрещён. Разрешите микрофон в настройках браузера и обновите страницу.';
   }
   if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
-    return 'Микрофон не найден. Подключите устройство и попробуйте снова.';
+    return 'Микрофон не найден. Подключите устройство, выберите его в настройках звука Windows и обновите страницу.';
   }
   if (name === 'NotReadableError') {
     return 'Микрофон занят другим приложением. Закройте его и попробуйте снова.';
@@ -81,6 +96,15 @@ export const useAudioRecorder = (onAudioChunk, onError) => {
   const startRecording = useCallback(async () => {
     if (typeof MediaRecorder === 'undefined') {
       if (onError) onError('MediaRecorder не поддерживается в этом браузере.');
+      return;
+    }
+
+    if (!isMicrophoneContextAvailable()) {
+      if (onError) {
+        onError(
+          'Микрофон доступен только по HTTPS или на localhost / 127.0.0.1. Используйте http://127.0.0.1:3000'
+        );
+      }
       return;
     }
 

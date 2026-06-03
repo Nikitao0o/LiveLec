@@ -18,7 +18,7 @@ const TeacherLectureControl = () => {
   const lectureId = lecture.id;
   const fileInputRef = useRef(null);
 
-  const { isConnected, lastMessage, sendMessage } = useWebSocket(pinCode, 'teacher');
+  const { isConnected, sendMessage, subscribe } = useWebSocket(pinCode, 'teacher');
   const [participantsCount, setParticipantsCount] = useState(0);
   const [questions, setQuestions] = useState([]);
   const [analyticsData, setAnalyticsData] = useState(
@@ -64,37 +64,66 @@ const TeacherLectureControl = () => {
   }, [lectureId]);
 
   useEffect(() => {
-    if (!lastMessage) return;
-    switch (lastMessage.type) {
-      case 'PARTICIPANTS_UPDATE':
-        setParticipantsCount(lastMessage.data.count);
-        break;
-      case 'NEW_QUESTION':
-        setQuestions((prev) => [lastMessage.data, ...prev]);
-        break;
-      case 'LIKE_UPDATE':
-        setQuestions((prev) => prev.map(q => 
-          q.id === lastMessage.data.question_id ? { ...q, likes_count: lastMessage.data.likes_count } : q
-        ).sort((a, b) => b.likes_count - a.likes_count));
-        break;
-      case 'CONFUSION_UPDATE':
-        setAnalyticsData(prev => {
-          const now = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-          const newData = [...prev, { time: now, value: lastMessage.data.total_confusion_count }];
-          if (newData.length > 10) newData.shift();
-          return newData;
-        });
-        break;
-      case 'QUIZ_ANSWER':
-        setQuizResults(prev => ({
-          ...prev,
-          [lastMessage.data.option_index]: prev[lastMessage.data.option_index] + 1
-        }));
-        break;
-      default:
-        break;
-    }
-  }, [lastMessage]);
+    if (!lectureId) return;
+    api
+      .get(`/questions/lecture/${lectureId}`)
+      .then((res) => setQuestions(res.data || []))
+      .catch(() => {});
+  }, [lectureId]);
+
+  useEffect(() => {
+    const handleMessage = (message) => {
+      switch (message.type) {
+        case 'PARTICIPANTS_UPDATE':
+          setParticipantsCount(message.data.count);
+          break;
+        case 'NEW_QUESTION':
+          setQuestions((prev) => {
+            if (prev.some((q) => q.id === message.data.id)) return prev;
+            return [message.data, ...prev];
+          });
+          break;
+        case 'LIKE_UPDATE':
+          setQuestions((prev) =>
+            prev
+              .map((q) =>
+                q.id === message.data.question_id
+                  ? { ...q, likes_count: message.data.likes_count }
+                  : q
+              )
+              .sort((a, b) => b.likes_count - a.likes_count)
+          );
+          break;
+        case 'CONFUSION_UPDATE': {
+          const now = new Date().toLocaleTimeString('ru-RU', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          });
+          setAnalyticsData((prev) => {
+            const lastValue = prev.length ? prev[prev.length - 1].value : 0;
+            const total =
+              message.data.total_confusion_count ??
+              lastValue + (message.data.confusion_count || 1);
+            const newData = [...prev, { time: now, value: total }];
+            if (newData.length > 10) newData.shift();
+            return newData;
+          });
+          break;
+        }
+        case 'QUIZ_ANSWER':
+          setQuizResults((prev) => ({
+            ...prev,
+            [message.data.option_index]: prev[message.data.option_index] + 1,
+          }));
+          break;
+        default:
+          break;
+      }
+    };
+
+    return subscribe(handleMessage);
+  }, [subscribe]);
 
   useEffect(() => {
     let timer;
@@ -297,6 +326,7 @@ const TeacherLectureControl = () => {
             <div className="flex-1 flex items-center justify-center p-6 pt-16 overflow-hidden">
               {slideCount > 0 && slideImageUrl ? (
                 <img
+                  key={slideImageUrl}
                   src={slideImageUrl}
                   alt={`Слайд ${currentSlide}`}
                   className="max-w-full max-h-full object-contain rounded-xl shadow-2xl bg-white"
