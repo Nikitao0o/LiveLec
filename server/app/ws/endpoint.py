@@ -6,7 +6,9 @@ from app.core.database import get_db
 from app.models.lecture import Lecture, LectureStatus
 from app.models.question import Question
 from app.models.analytics import Analytics
+from app.models.transcript import TranscriptSegment  
 from app.ws.manager import manager
+from app.services.asr import asr_service  
 
 router = APIRouter()
 
@@ -88,6 +90,11 @@ async def websocket_endpoint(
             
             elif message_type == "SLIDE_CHANGE":
                 await handle_slide_change(pin_code, message_data)
+                
+            # --- ОБРАБОТКА АУДИО ---
+            elif message_type == "AUDIO_CHUNK":
+                if user_type == "teacher": # Только преподаватель может отправлять аудио
+                    await handle_audio_chunk(pin_code, message_data, db)
             
             elif message_type == "PING":
                 await websocket.send_json({"type": "PONG"})
@@ -205,3 +212,37 @@ async def handle_slide_change(pin_code: str, data: dict):
         "type": "SLIDE_CHANGE",
         "data": {"slide_number": slide_number}
     }, exclude_teacher=True)
+
+
+# --- НОВЫЙ ХЭНДЛЕР ДЛЯ АУДИО ---
+async def handle_audio_chunk(pin_code: str, data: dict, db: AsyncSession):
+    """Обработка аудио чанков от преподавателя"""
+    base64_chunk = data.get("chunk")
+    if not base64_chunk:
+        return
+        
+    result = await db.execute(select(Lecture).where(Lecture.pin_code == pin_code))
+    lecture = result.scalar_one_or_none()
+    
+    if not lecture or lecture.status == LectureStatus.FINISHED:
+        return
+
+    # 1. Распознаем аудио через Whisper
+    recognized_text = await asr_service.process_audio_chunk(base64_chunk)
+    
+    if recognized_text and recognized_text.strip():
+        # 2. Сохраняем сырой текст в БД
+        segment = TranscriptSegment(
+            lecture_id=lecture.id,
+            start_ms=0, # Для MVP оставляем 0, в будущем можно считать таймкод от начала лекции
+            end_ms=0,
+            raw_text=recognized_text
+        )
+        db.add(segment)
+        await db.commit()
+        
+        # 3. Рассылаем субтитры всем студентам
+        await manager.broadcast_to_room(pin_code, {
+            "type": "ASR_TEXT",
+            "data": {"text": recognized_text}
+        }, exclude_teacher=True)
