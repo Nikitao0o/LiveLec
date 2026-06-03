@@ -1,9 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.core.database import get_db
 from app.models.lecture import Lecture, LectureStatus
 from app.models.question import Question
+from app.models.analytics import Analytics
+from app.models.transcript import TranscriptSegment
 from app.models.user import User
 from app.api.auth import get_current_user
 from app.schemas.lecture import LectureCreate, LectureResponse, LectureJoin, LectureJoinResponse
@@ -153,3 +156,73 @@ async def finish_lecture(
         "data": {"lecture_id": lecture.id, "status": lecture.status.value}
     })
     return serialize_lecture(lecture)
+
+@router.get("/{lecture_id}/analytics")
+async def lecture_analytics(
+    lecture_id: int, 
+    db: AsyncSession = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    lecture = await get_owned_lecture(lecture_id, current_user.id, db)
+    
+    # Сумма жалоб
+    conf_res = await db.execute(select(func.coalesce(func.sum(Analytics.confusion_count), 0)).where(Analytics.lecture_id == lecture_id))
+    confusion_sum = conf_res.scalar_one()
+
+    # Количество вопросов
+    q_res = await db.execute(select(func.count(Question.id)).where(Question.lecture_id == lecture_id))
+    questions_count = q_res.scalar_one()
+
+    # Данные для графика
+    analytics_entries = await db.execute(select(Analytics).where(Analytics.lecture_id == lecture_id).order_by(Analytics.minute_mark))
+    chart_data = []
+    for entry in analytics_entries.scalars().all():
+        time_str = entry.minute_mark.strftime("%H:%M") if entry.minute_mark else "00:00"
+        chart_data.append({"time": time_str, "confusion": entry.confusion_count})
+
+    if not chart_data:
+        chart_data = [{"time": "00:00", "confusion": 0}]
+
+    return {
+        "id": lecture.id,
+        "title": lecture.title,
+        "created_at": lecture.created_at.isoformat(),
+        "confusion_sum": confusion_sum,
+        "questions_count": questions_count,
+        "students_count": max(12, questions_count * 2), # Эмуляция студентов
+        "engagement": max(0, 100 - confusion_sum * 2),
+        "chart_data": chart_data
+    }
+
+@router.get("/{lecture_id}/export")
+async def export_lecture(
+    lecture_id: int, 
+    format: str = "txt", 
+    db: AsyncSession = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    lecture = await get_owned_lecture(lecture_id, current_user.id, db)
+    segments = await db.execute(select(TranscriptSegment).where(TranscriptSegment.lecture_id == lecture_id).order_by(TranscriptSegment.start_ms))
+    
+    text_lines = []
+    for seg in segments.scalars().all():
+        text = seg.cleaned_text if seg.cleaned_text else seg.raw_text
+        if text:
+            text_lines.append(text)
+            
+    full_text = "\n".join(text_lines) if text_lines else "Текст лекции отсутствует (ASR не был запущен)."
+
+    if format == "md":
+        content = f"# Расшифровка лекции: {lecture.title}\n\n**Дата:** {lecture.created_at.strftime('%Y-%m-%d')}\n\n---\n\n{full_text}"
+        media_type = "text/markdown"
+        filename = f"lecture_{lecture_id}.md"
+    else:
+        content = f"Расшифровка лекции: {lecture.title}\nДата: {lecture.created_at.strftime('%Y-%m-%d')}\n\n{full_text}"
+        media_type = "text/plain"
+        filename = f"lecture_{lecture_id}.txt"
+
+    return PlainTextResponse(
+        content=content, 
+        media_type=media_type, 
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )

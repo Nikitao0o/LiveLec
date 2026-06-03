@@ -4,7 +4,6 @@ import StudentLecture from './pages/StudentLecture';
 import AuthTeacher from './pages/AuthTeacher';
 import TeacherLectureControl from './pages/TeacherLectureControl';
 
-// Импорты страниц, которые будут внутри Layout
 import TeacherLayout from './layouts/TeacherLayout';
 import TeacherDashboard from './pages/TeacherDashboard';
 import GlobalAnalytics from './pages/GlobalAnalytics';
@@ -16,19 +15,17 @@ function App() {
   return (
     <Router>
       <Routes>
-        {/* Свободные страницы */}
         <Route path="/" element={<JoinLecture />} />
         <Route path="/login" element={<AuthTeacher />} />
         <Route path="/lecture" element={<StudentLecture />} />
         <Route path="/teacher/control" element={<TeacherLectureControl />} />
 
-        {/* Страницы преподавателя с общим боковым меню (Layout) */}
         <Route path="/teacher" element={<TeacherLayout />}>
           <Route index element={<TeacherDashboard />} />
           <Route path="analytics-global" element={<GlobalAnalytics />} />
           <Route path="archive" element={<LectureArchive />} />
           <Route path="settings" element={<TeacherSettings />} />
-          <Route path="analytics" element={<PostLectureAnalytics />} />
+          <Route path="analytics/:id" element={<PostLectureAnalytics />} />
         </Route>
       </Routes>
     </Router>

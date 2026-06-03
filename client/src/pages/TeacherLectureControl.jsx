@@ -8,33 +8,26 @@ import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
+import api from '../api';
 
 const TeacherLectureControl = () => {
   const navigate = useNavigate();
-  const pinCode = localStorage.getItem('teacherPin') || '481516';
+  const lecture = JSON.parse(localStorage.getItem('currentLecture') || '{}');
+  const pinCode = lecture.pin_code || '---';
 
-  // --- WEBSOCKETS ---
   const { isConnected, lastMessage, sendMessage } = useWebSocket(pinCode, 'teacher');
   const [participantsCount, setParticipantsCount] = useState(0);
-
-  // Вопросы
   const [questions, setQuestions] = useState([]);
-
-  // Аналитика (график)
   const [analyticsData, setAnalyticsData] = useState(
     Array.from({ length: 6 }).map((_, i) => ({ time: `-${5-i}m`, value: 0 }))
   );
 
-  // --- ЗАХВАТ АУДИО (ASR) ---
   const { isRecording, toggleRecording } = useAudioRecorder((base64Chunk) => {
-    // Отправляем аудио чанк на бэкенд
     sendMessage('AUDIO_CHUNK', { chunk: base64Chunk });
   });
 
-  // Обработка входящих WS-сообщений
   useEffect(() => {
     if (!lastMessage) return;
-
     switch (lastMessage.type) {
       case 'PARTICIPANTS_UPDATE':
         setParticipantsCount(lastMessage.data.count);
@@ -62,7 +55,6 @@ const TeacherLectureControl = () => {
     }
   }, [lastMessage]);
 
-  // --- ЛОГИКА КВИЗА (Заглушка) ---
   const [isQuizActive, setIsQuizActive] = useState(false);
   const [quizTimer, setQuizTimer] = useState(15);
   const [quizResults, setQuizResults] = useState({ 1: 45, 2: 30, 3: 12, 4: 8 });
@@ -81,19 +73,24 @@ const TeacherLectureControl = () => {
     setQuizTimer(15);
   };
 
-  const finishLecture = () => {
-    if (isRecording) toggleRecording(); // Выключаем микрофон при завершении
-    navigate('/teacher/analytics');
+  // ИСПРАВЛЕНО: Завершение лекции
+  const finishLecture = async () => {
+    if (isRecording) toggleRecording();
+    try {
+      await api.post(`/lectures/${lecture.id}/finish`);
+    } catch (err) {
+      console.error("Ошибка завершения", err);
+    }
+    navigate(`/teacher/analytics/${lecture.id}`);
   };
 
   return (
     <div className="h-screen bg-slate-100 flex flex-col font-sans overflow-hidden text-left leading-none">
-      {/* 1. HEADER */}
       <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between shrink-0 z-10">
         <div className="flex items-center gap-6 text-left">
           <div className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-black tracking-tighter leading-none">LiveLec</div>
           <div className="text-left">
-             <h1 className="text-lg font-bold text-slate-800 leading-none uppercase tracking-tight">Архитектура БД: ACID</h1>
+             <h1 className="text-lg font-bold text-slate-800 leading-none uppercase tracking-tight">{lecture.title || "Лекция"}</h1>
              <div className="flex items-center gap-2 mt-1 leading-none text-left">
                 <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-rose-500'}`}></span>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">
@@ -122,9 +119,7 @@ const TeacherLectureControl = () => {
         </div>
       </header>
 
-      {/* 2. MAIN CONTENT */}
       <div className="flex-1 flex overflow-hidden p-6 gap-6">
-        {/* ЛЕВО: ВОПРОСЫ */}
         <aside className="w-80 md:w-96 flex flex-col gap-4 shrink-0 text-left">
           <h3 className="font-black text-slate-800 uppercase tracking-widest text-xs flex items-center gap-2 px-2 leading-none text-left">
             <MessageSquare size={16} /> Вопросы
@@ -144,13 +139,10 @@ const TeacherLectureControl = () => {
           </div>
         </aside>
 
-        {/* ПРАВО: ПУЛЬТ УПРАВЛЕНИЯ */}
         <main className="flex-1 flex flex-col gap-6 overflow-hidden leading-none text-left">
           <div className="flex-1 bg-indigo-900 rounded-[2.5rem] relative overflow-hidden flex flex-col shadow-2xl border-4 border-white leading-none">
-            {/* --- ОВЕРЛЕЙ КВИЗА --- */}
             {isQuizActive && (
               <div className="absolute inset-0 z-50 bg-indigo-950 flex flex-col p-8 text-white animate-in fade-in duration-300 text-left">
-                {/* Шапка квиза */}
                 <div className="flex justify-between items-start mb-6 shrink-0 leading-none">
                   <div className="leading-none text-left">
                     <div className="flex items-center gap-3 mb-2 leading-none">
@@ -165,7 +157,6 @@ const TeacherLectureControl = () => {
                     <X size={20} />
                   </button>
                 </div>
-                {/* ТЕКСТ ВОПРОСА */}
                 <div className="mb-6 shrink-0 text-left">
                    <h2 className="text-lg md:text-xl font-black leading-tight text-indigo-50 italic opacity-90 tracking-tight leading-none">
                       "Какое свойство ACID отвечает за неделимость транзакции?"
@@ -197,13 +188,11 @@ const TeacherLectureControl = () => {
                 </div>
               </div>
             )}
-            {/* КОНТЕНТ СЛАЙДА */}
             <div className="flex-1 flex items-center justify-center p-10 text-center text-white leading-none">
                <h2 className="text-4xl font-black uppercase tracking-tighter italic leading-tight leading-none">
-                  Базы Данных: <br/> Архитектура ACID
+                  {lecture.title || "Лекция"}
                </h2>
             </div>
-            {/* СЛАЙДЕР КОНТРОЛ */}
             <div className="p-4 bg-black/20 backdrop-blur-sm flex justify-between items-center px-10 text-white shrink-0 leading-none">
                <button 
                   onClick={() => sendMessage('SLIDE_CHANGE', { slide_number: 3 })}
@@ -220,7 +209,6 @@ const TeacherLectureControl = () => {
             </div>
           </div>
 
-          {/* ГРАФИК ПОНИМАНИЯ */}
           <div className="h-40 bg-white rounded-[2rem] border border-slate-200 p-5 flex flex-col shadow-sm shrink-0 leading-none text-left">
             <h3 className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2 mb-3 leading-none text-left">
               <BarChart3 size={12} /> Понимание аудитории (Счетчик кликов "Не понимаю")
@@ -234,7 +222,6 @@ const TeacherLectureControl = () => {
             </div>
           </div>
 
-          {/* КНОПКИ */}
           <div className="grid grid-cols-2 gap-4 shrink-0 leading-none">
              <button 
                onClick={startQuiz}
