@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Users, MessageSquare, PlayCircle, Mic, 
   ChevronLeft, ChevronRight, XCircle, BarChart3, X,
-  Triangle, Square, Circle, Diamond
+  Triangle, Square, Circle, Diamond, AlertCircle
 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { useNavigate } from 'react-router-dom';
@@ -21,10 +21,29 @@ const TeacherLectureControl = () => {
   const [analyticsData, setAnalyticsData] = useState(
     Array.from({ length: 6 }).map((_, i) => ({ time: `-${5-i}m`, value: 0 }))
   );
+  const [toast, setToast] = useState(null);
 
-  const { isRecording, toggleRecording } = useAudioRecorder((base64Chunk) => {
-    sendMessage('AUDIO_CHUNK', { chunk: base64Chunk });
+  const showToast = (message) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 5000);
+  };
+
+  const { isRecording, toggleRecording } = useAudioRecorder(
+    (base64Chunk) => sendMessage('AUDIO_CHUNK', { chunk: base64Chunk }),
+    (errorMsg) => showToast(errorMsg)
+  );
+
+  const [isQuizModalOpen, setIsQuizModalOpen] = useState(false);
+  const [isQuizActive, setIsQuizActive] = useState(false);
+  const [quizTimer, setQuizTimer] = useState(0);
+  const [quizResults, setQuizResults] = useState({ 0: 0, 1: 0, 2: 0, 3: 0 });
+  const [quizForm, setQuizForm] = useState({
+    question: '',
+    options: ['', '', '', ''],
+    duration: 30
   });
+
+  const totalVotes = Object.values(quizResults).reduce((a, b) => a + b, 0);
 
   useEffect(() => {
     if (!lastMessage) return;
@@ -37,9 +56,7 @@ const TeacherLectureControl = () => {
         break;
       case 'LIKE_UPDATE':
         setQuestions((prev) => prev.map(q => 
-          q.id === lastMessage.data.question_id 
-            ? { ...q, likes_count: lastMessage.data.likes_count } 
-            : q
+          q.id === lastMessage.data.question_id ? { ...q, likes_count: lastMessage.data.likes_count } : q
         ).sort((a, b) => b.likes_count - a.likes_count));
         break;
       case 'CONFUSION_UPDATE':
@@ -50,15 +67,16 @@ const TeacherLectureControl = () => {
           return newData;
         });
         break;
+      case 'QUIZ_ANSWER':
+        setQuizResults(prev => ({
+          ...prev,
+          [lastMessage.data.option_index]: prev[lastMessage.data.option_index] + 1
+        }));
+        break;
       default:
         break;
     }
   }, [lastMessage]);
-
-  const [isQuizActive, setIsQuizActive] = useState(false);
-  const [quizTimer, setQuizTimer] = useState(15);
-  const [quizResults, setQuizResults] = useState({ 1: 45, 2: 30, 3: 12, 4: 8 });
-  const totalVotes = Object.values(quizResults).reduce((a, b) => a + b, 0);
 
   useEffect(() => {
     let timer;
@@ -68,12 +86,15 @@ const TeacherLectureControl = () => {
     return () => clearTimeout(timer);
   }, [isQuizActive, quizTimer]);
 
-  const startQuiz = () => {
+  const handleStartQuiz = (e) => {
+    e.preventDefault();
+    sendMessage('QUIZ_START', quizForm);
     setIsQuizActive(true);
-    setQuizTimer(15);
+    setQuizTimer(quizForm.duration);
+    setQuizResults({ 0: 0, 1: 0, 2: 0, 3: 0 });
+    setIsQuizModalOpen(false);
   };
 
-  // ИСПРАВЛЕНО: Завершение лекции
   const finishLecture = async () => {
     if (isRecording) toggleRecording();
     try {
@@ -85,7 +106,16 @@ const TeacherLectureControl = () => {
   };
 
   return (
-    <div className="h-screen bg-slate-100 flex flex-col font-sans overflow-hidden text-left leading-none">
+    <div className="h-screen bg-slate-100 flex flex-col font-sans overflow-hidden text-left leading-none relative">
+      
+      {toast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 bg-rose-500 text-white px-6 py-4 rounded-2xl shadow-xl shadow-rose-500/20 flex items-center gap-3 z-[200] animate-in slide-in-from-top-4 fade-in duration-300 w-[90%] max-w-md">
+          <AlertCircle size={24} className="shrink-0" />
+          <p className="text-sm font-bold flex-1 leading-tight">{toast}</p>
+          <button onClick={() => setToast(null)} className="p-1 hover:bg-white/20 rounded-lg transition-colors shrink-0 cursor-pointer"><X size={18} /></button>
+        </div>
+      )}
+
       <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between shrink-0 z-10">
         <div className="flex items-center gap-6 text-left">
           <div className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-black tracking-tighter leading-none">LiveLec</div>
@@ -109,10 +139,7 @@ const TeacherLectureControl = () => {
                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 leading-none">Код входа</p>
                  <p className="text-3xl font-mono font-black text-indigo-600 tracking-tighter leading-none">{pinCode}</p>
               </div>
-              <button 
-                onClick={finishLecture} 
-                className="bg-rose-50 text-rose-600 px-4 py-2 rounded-xl font-bold border border-rose-100 hover:bg-rose-100 transition-all flex items-center gap-2 leading-none cursor-pointer"
-              >
+              <button onClick={finishLecture} className="bg-rose-50 text-rose-600 px-4 py-2 rounded-xl font-bold border border-rose-100 hover:bg-rose-100 transition-all flex items-center gap-2 leading-none cursor-pointer">
                  <XCircle size={18} /> Завершить
               </button>
            </div>
@@ -141,6 +168,7 @@ const TeacherLectureControl = () => {
 
         <main className="flex-1 flex flex-col gap-6 overflow-hidden leading-none text-left">
           <div className="flex-1 bg-indigo-900 rounded-[2.5rem] relative overflow-hidden flex flex-col shadow-2xl border-4 border-white leading-none">
+            
             {isQuizActive && (
               <div className="absolute inset-0 z-50 bg-indigo-950 flex flex-col p-8 text-white animate-in fade-in duration-300 text-left">
                 <div className="flex justify-between items-start mb-6 shrink-0 leading-none">
@@ -153,66 +181,57 @@ const TeacherLectureControl = () => {
                        {quizTimer > 0 ? `Осталось: ${quizTimer}с` : 'Опрос окончен'}
                     </p>
                   </div>
-                  <button onClick={() => setIsQuizActive(false)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors leading-none cursor-pointer">
-                    <X size={20} />
-                  </button>
+                  <button onClick={() => setIsQuizActive(false)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors leading-none cursor-pointer"><X size={20} /></button>
                 </div>
+                
                 <div className="mb-6 shrink-0 text-left">
                    <h2 className="text-lg md:text-xl font-black leading-tight text-indigo-50 italic opacity-90 tracking-tight leading-none">
-                      "Какое свойство ACID отвечает за неделимость транзакции?"
+                      "{quizForm.question}"
                    </h2>
                 </div>
+
                 <div className="flex-1 flex flex-col gap-4 overflow-y-auto pr-2 text-left pt-2">
-                   {[
-                     { id: 1, label: 'Atomicity', icon: <Triangle size={14} fill="currentColor" />, color: 'bg-rose-500', text: 'text-rose-500' },
-                     { id: 2, label: 'Consistency', icon: <Diamond size={14} fill="currentColor" />, color: 'bg-blue-500', text: 'text-blue-500' },
-                     { id: 3, label: 'Isolation', icon: <Circle size={14} fill="currentColor" />, color: 'bg-amber-500', text: 'text-amber-500' },
-                     { id: 4, label: 'Durability', icon: <Square size={14} fill="currentColor" />, color: 'bg-emerald-500', text: 'text-emerald-500' }
-                   ].map((opt) => (
-                     <div key={opt.id} className="space-y-2 leading-none text-left">
-                        <div className="flex justify-between items-center text-[11px] font-black uppercase tracking-widest leading-none">
-                           <div className="flex items-center gap-2 leading-none">
-                              <span className={opt.text}>{opt.icon}</span>
-                              <span className="opacity-90">{opt.label}</span>
-                           </div>
-                           <span className="font-bold text-indigo-300 italic">{quizResults[opt.id]} ответов</span>
-                        </div>
-                        <div className="h-3.5 bg-white/10 rounded-full overflow-hidden border border-white/5 leading-none">
-                           <div 
-                              className={`h-full ${opt.color} transition-all duration-1000 ease-out rounded-full shadow-[0_0_15px_rgba(0,0,0,0.2)]`}
-                              style={{ width: `${(quizResults[opt.id] / totalVotes) * 100}%` }}
-                           />
-                        </div>
-                     </div>
-                   ))}
+                   {quizForm.options.map((opt, idx) => {
+                     if (!opt) return null;
+                     const icons = [<Triangle size={14} fill="currentColor" />, <Diamond size={14} fill="currentColor" />, <Circle size={14} fill="currentColor" />, <Square size={14} fill="currentColor" />];
+                     const colors = ['bg-rose-500', 'bg-blue-500', 'bg-amber-500', 'bg-emerald-500'];
+                     const textColors = ['text-rose-500', 'text-blue-500', 'text-amber-500', 'text-emerald-500'];
+                     return (
+                       <div key={idx} className="space-y-2 leading-none text-left">
+                          <div className="flex justify-between items-center text-[11px] font-black uppercase tracking-widest leading-none">
+                             <div className="flex items-center gap-2 leading-none">
+                                <span className={textColors[idx]}>{icons[idx]}</span>
+                                <span className="opacity-90">{opt}</span>
+                             </div>
+                             <span className="font-bold text-indigo-300 italic">{quizResults[idx]} ответов</span>
+                          </div>
+                          <div className="h-3.5 bg-white/10 rounded-full overflow-hidden border border-white/5 leading-none">
+                             <div 
+                                className={`h-full ${colors[idx]} transition-all duration-1000 ease-out rounded-full shadow-[0_0_15px_rgba(0,0,0,0.2)]`}
+                                style={{ width: `${totalVotes > 0 ? (quizResults[idx] / totalVotes) * 100 : 0}%` }}
+                             />
+                          </div>
+                       </div>
+                     );
+                   })}
                 </div>
               </div>
             )}
+
             <div className="flex-1 flex items-center justify-center p-10 text-center text-white leading-none">
                <h2 className="text-4xl font-black uppercase tracking-tighter italic leading-tight leading-none">
                   {lecture.title || "Лекция"}
                </h2>
             </div>
+            
             <div className="p-4 bg-black/20 backdrop-blur-sm flex justify-between items-center px-10 text-white shrink-0 leading-none">
-               <button 
-                  onClick={() => sendMessage('SLIDE_CHANGE', { slide_number: 3 })}
-                  className="text-white/60 hover:text-white transition-colors flex items-center gap-2 font-bold uppercase text-[10px] tracking-widest leading-none cursor-pointer"
-                >
-                  <ChevronLeft size={16}/> Назад
-               </button>
-               <button 
-                  onClick={() => sendMessage('SLIDE_CHANGE', { slide_number: 5 })}
-                  className="text-white hover:text-indigo-400 transition-colors flex items-center gap-2 font-black uppercase text-[10px] tracking-widest leading-none cursor-pointer"
-                >
-                  Вперед <ChevronRight size={16}/>
-               </button>
+               <button onClick={() => sendMessage('SLIDE_CHANGE', { slide_number: 3 })} className="text-white/60 hover:text-white transition-colors flex items-center gap-2 font-bold uppercase text-[10px] tracking-widest leading-none cursor-pointer"><ChevronLeft size={16}/> Назад</button>
+               <button onClick={() => sendMessage('SLIDE_CHANGE', { slide_number: 5 })} className="text-white hover:text-indigo-400 transition-colors flex items-center gap-2 font-black uppercase text-[10px] tracking-widest leading-none cursor-pointer">Вперед <ChevronRight size={16}/></button>
             </div>
           </div>
 
           <div className="h-40 bg-white rounded-[2rem] border border-slate-200 p-5 flex flex-col shadow-sm shrink-0 leading-none text-left">
-            <h3 className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2 mb-3 leading-none text-left">
-              <BarChart3 size={12} /> Понимание аудитории (Счетчик кликов "Не понимаю")
-            </h3>
+            <h3 className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2 mb-3 leading-none text-left"><BarChart3 size={12} /> Понимание аудитории (Счетчик кликов "Не понимаю")</h3>
             <div className="flex-1 w-full leading-none">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={analyticsData}>
@@ -224,7 +243,7 @@ const TeacherLectureControl = () => {
 
           <div className="grid grid-cols-2 gap-4 shrink-0 leading-none">
              <button 
-               onClick={startQuiz}
+               onClick={() => setIsQuizModalOpen(true)}
                className="bg-indigo-600 text-white py-5 rounded-[2rem] font-black text-xs uppercase tracking-widest shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3 leading-none cursor-pointer"
              >
                 <PlayCircle size={24} /> Запустить Блиц-Опрос
@@ -232,9 +251,7 @@ const TeacherLectureControl = () => {
              <button 
                 onClick={toggleRecording}
                 className={`border-4 py-5 rounded-[2rem] font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 transition-all leading-none cursor-pointer ${
-                  isRecording 
-                    ? 'bg-rose-50 border-rose-500 text-rose-600 hover:bg-rose-100' 
-                    : 'bg-white border-indigo-600 text-indigo-600 hover:bg-indigo-50'
+                  isRecording ? 'bg-rose-50 border-rose-500 text-rose-600 hover:bg-rose-100' : 'bg-white border-indigo-600 text-indigo-600 hover:bg-indigo-50'
                 }`}
               >
                 <Mic size={24} className={isRecording ? 'animate-pulse' : ''} /> 
@@ -243,6 +260,41 @@ const TeacherLectureControl = () => {
           </div>
         </main>
       </div>
+
+      {isQuizModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" onClick={() => setIsQuizModalOpen(false)}></div>
+          <div className="relative bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-100 animate-in fade-in zoom-in duration-200">
+             <div className="bg-indigo-600 p-8 text-white flex justify-between items-center">
+                <div>
+                   <h3 className="text-2xl font-black tracking-tight leading-none">Новый опрос</h3>
+                </div>
+                <button onClick={() => setIsQuizModalOpen(false)} className="p-2 hover:bg-white/10 rounded-xl transition-colors leading-none cursor-pointer"><X size={24} /></button>
+             </div>
+             <form onSubmit={handleStartQuiz} className="p-8 space-y-4 text-left leading-none">
+                <div>
+                   <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest leading-none">Вопрос</label>
+                   <input type="text" placeholder="Введите вопрос..." className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-indigo-500 mt-1 font-bold text-sm" onChange={(e) => setQuizForm({...quizForm, question: e.target.value})} required />
+                </div>
+                {quizForm.options.map((opt, idx) => (
+                  <div key={idx}>
+                     <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest leading-none">Вариант {idx + 1}</label>
+                     <input type="text" placeholder={`Текст варианта ${idx + 1}`} className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl py-2 px-4 outline-none focus:border-indigo-500 mt-1 text-sm font-medium" value={opt} onChange={(e) => {
+                        const newOptions = [...quizForm.options];
+                        newOptions[idx] = e.target.value;
+                        setQuizForm({...quizForm, options: newOptions});
+                     }} required={idx < 2} />
+                  </div>
+                ))}
+                <div>
+                   <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest leading-none">Время (сек)</label>
+                   <input type="number" min="5" max="120" className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl py-2 px-4 outline-none focus:border-indigo-500 mt-1 text-sm font-bold" value={quizForm.duration} onChange={(e) => setQuizForm({...quizForm, duration: parseInt(e.target.value)})} required />
+                </div>
+                <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-2xl shadow-lg mt-4 text-xs uppercase tracking-widest cursor-pointer">Начать трансляцию опроса</button>
+             </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

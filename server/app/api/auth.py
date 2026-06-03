@@ -1,9 +1,9 @@
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from werkzeug.security import generate_password_hash, check_password_hash
-from jose import JWTError, jwt
+from jose import jwt, JWTError
 from datetime import datetime, timedelta
 from app.core.database import get_db
 from app.core.config import settings
@@ -24,23 +24,16 @@ def create_access_token(data: dict):
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
-async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: AsyncSession = Depends(get_db)
-) -> User:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
+    credentials_exception = HTTPException(status_code=401, detail="Could not validate credentials")
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        email = payload.get("sub")
+        email: str = payload.get("sub")
         if email is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
-
+        
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
     if user is None:
@@ -49,12 +42,10 @@ async def get_current_user(
 
 @router.post("/register", response_model=UserResponse)
 async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
-    # Проверяем, существует ли пользователь
     existing = await db.execute(select(User).where(User.email == user_data.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    # Создаём пользователя с хэшем пароля
     hashed_password = generate_password_hash(user_data.password)
     new_user = User(
         email=user_data.email,
@@ -74,20 +65,17 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
 
 @router.post("/token", response_model=Token)
 async def login(login_data: LoginRequest, db: AsyncSession = Depends(get_db)):
-    # Ищем пользователя
     result = await db.execute(select(User).where(User.email == login_data.email))
     user = result.scalar_one_or_none()
     
-    # Проверяем пароль
     if not user or not check_password_hash(user.hashed_password, login_data.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    # Создаём JWT токен
     access_token = create_access_token(data={"sub": user.email})
     return Token(access_token=access_token)
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_user)):
+async def read_users_me(current_user: User = Depends(get_current_user)):
     return UserResponse(
         id=current_user.id,
         email=current_user.email,

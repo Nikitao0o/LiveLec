@@ -1,17 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Download, MessageSquare, BarChart3, Users, AlertTriangle, FileCode } from 'lucide-react';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../api';
 
 const PostLectureAnalytics = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     api.get(`/lectures/${id}/analytics`)
-       .then(res => setData(res.data))
-       .catch(err => console.error("Ошибка загрузки отчета", err));
+       .then(res => {
+         if (!res.data) setError(true);
+         else setData(res.data);
+       })
+       .catch(err => {
+         console.error("Ошибка загрузки отчета", err);
+         setError(true);
+       });
   }, [id]);
 
   const handleDownload = async (format) => {
@@ -30,17 +38,28 @@ const PostLectureAnalytics = () => {
     }
   };
 
+  if (error) {
+    return (
+      <div className="p-10 text-center mt-20">
+        <p className="text-rose-500 font-bold uppercase tracking-widest mb-4">Отчет недоступен или лекция удалена</p>
+        <button onClick={() => navigate('/teacher')} className="text-indigo-600 font-bold hover:underline cursor-pointer">Вернуться в дашборд</button>
+      </div>
+    );
+  }
+
   if (!data) {
     return <div className="p-10 text-slate-400 font-bold uppercase tracking-widest text-center mt-20">Загрузка аналитики...</div>;
   }
+
+  const dateStr = data.created_at ? new Date(data.created_at).toLocaleDateString('ru-RU') : 'Нет даты';
 
   return (
     <>
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 text-left leading-none">
         <div>
-          <h1 className="text-2xl font-black text-slate-800 tracking-tight italic uppercase leading-none">Итоги: {data.title}</h1>
+          <h1 className="text-2xl font-black text-slate-800 tracking-tight italic uppercase leading-none">Итоги: {data.title || "Лекция"}</h1>
           <p className="text-sm text-slate-400 font-medium mt-2 uppercase tracking-widest leading-none">
-            {new Date(data.created_at).toLocaleDateString('ru-RU')}
+            {dateStr}
           </p>
         </div>
         <div className="flex gap-3">
@@ -62,19 +81,19 @@ const PostLectureAnalytics = () => {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8 text-left">
         <div className="bg-white py-6 pl-4 pr-6 rounded-[2rem] border border-slate-200 shadow-sm">
            <div className="flex items-center gap-2 text-slate-400 mb-3"><Users size={16} /> <span className="text-[9px] font-black uppercase tracking-widest leading-none">Студентов</span></div>
-           <p className="text-3xl font-black text-slate-800 tracking-tighter leading-none">{data.students_count}</p>
+           <p className="text-3xl font-black text-slate-800 tracking-tighter leading-none">{data.students_count || 0}</p>
         </div>
         <div className="bg-white py-6 pl-4 pr-6 rounded-[2rem] border border-slate-200 shadow-sm">
            <div className="flex items-center gap-2 text-rose-500 mb-3"><AlertTriangle size={16} /> <span className="text-[9px] font-black uppercase tracking-widest leading-none">Жалобы</span></div>
-           <p className="text-3xl font-black text-rose-500 tracking-tighter leading-none">{data.confusion_sum}</p>
+           <p className="text-3xl font-black text-rose-500 tracking-tighter leading-none">{data.confusion_sum || 0}</p>
         </div>
         <div className="bg-white py-6 pl-4 pr-6 rounded-[2rem] border border-slate-200 shadow-sm leading-none">
            <div className="flex items-center gap-2 text-slate-400 mb-3 leading-none"><MessageSquare size={16} /> <span className="text-[9px] font-black uppercase tracking-widest leading-none">Вопросы</span></div>
-           <p className="text-3xl font-black text-slate-800 tracking-tighter leading-none">{data.questions_count}</p>
+           <p className="text-3xl font-black text-slate-800 tracking-tighter leading-none">{data.questions_count || 0}</p>
         </div>
         <div className="bg-white py-6 pl-4 pr-6 rounded-[2rem] border border-slate-200 shadow-sm border-l-4 border-l-indigo-600 leading-none">
            <div className="flex items-center gap-2 text-indigo-600 mb-3 leading-none"><BarChart3 size={16} /> <span className="text-[9px] font-black uppercase tracking-widest leading-none">Вовлеченность</span></div>
-           <p className="text-3xl font-black text-indigo-600 tracking-tighter leading-none">{data.engagement}%</p>
+           <p className="text-3xl font-black text-indigo-600 tracking-tighter leading-none">{data.engagement || 0}%</p>
         </div>
       </div>
 
@@ -82,7 +101,7 @@ const PostLectureAnalytics = () => {
          <h3 className="text-xs font-black uppercase tracking-widest text-slate-800 mb-8 leading-none">График понимания (Heatmap)</h3>
          <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data.chart_data}>
+              <AreaChart data={data.chart_data || []}>
                 <defs>
                   <linearGradient id="colorConf" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.8}/><stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>

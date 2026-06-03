@@ -1,22 +1,22 @@
 import { useState, useRef, useCallback } from 'react';
 
-export const useAudioRecorder = (onAudioChunk) => {
+export const useAudioRecorder = (onAudioChunk, onError) => {
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorder = useRef(null);
   const stream = useRef(null);
 
   const startRecording = useCallback(async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      if (onError) onError("Браузер заблокировал доступ к микрофону. Используйте localhost или HTTPS соединение.");
+      return;
+    }
+
     try {
-      // Запрашиваем доступ к микрофону
       stream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      // Создаем рекордер (предпочтительно webm, так как он хорошо работает в браузере)
       mediaRecorder.current = new MediaRecorder(stream.current, { mimeType: 'audio/webm' });
 
-      // Когда готов новый чанк данных (каждую секунду)
       mediaRecorder.current.ondataavailable = async (e) => {
         if (e.data.size > 0 && onAudioChunk) {
-          // Конвертируем Blob в Base64 для передачи через JSON WebSocket
           const reader = new FileReader();
           reader.readAsDataURL(e.data);
           reader.onloadend = () => {
@@ -26,15 +26,14 @@ export const useAudioRecorder = (onAudioChunk) => {
         }
       };
 
-      // Запускаем сбор чанков каждую 1000 мс (1 секунда)
       mediaRecorder.current.start(1000);
       setIsRecording(true);
       
     } catch (err) {
       console.error("Ошибка доступа к микрофону:", err);
-      alert("Не удалось получить доступ к микрофону. Проверьте разрешения браузера.");
+      if (onError) onError("Не удалось получить доступ к микрофону. Проверьте разрешения в браузере.");
     }
-  }, [onAudioChunk]);
+  }, [onAudioChunk, onError]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorder.current && mediaRecorder.current.state !== 'inactive') {

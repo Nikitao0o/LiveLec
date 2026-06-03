@@ -24,17 +24,17 @@ const GlobalAnalytics = () => {
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
           <TrendingUp className="text-indigo-600 mb-3" size={24} />
           <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Рост вовлеченности</p>
-          <p className="text-3xl font-black text-slate-800">{stats.engagement_growth} <span className="text-sm text-green-500 font-bold tracking-tighter">в этом месяце</span></p>
+          <p className="text-3xl font-black text-slate-800">{stats.engagement_growth || '0%'} <span className="text-sm text-green-500 font-bold tracking-tighter">в этом месяце</span></p>
         </div>
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
           <Users className="text-indigo-600 mb-3" size={24} />
           <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Активных студентов</p>
-          <p className="text-3xl font-black text-slate-800">{stats.active_students}</p>
+          <p className="text-3xl font-black text-slate-800">{stats.active_students || 0}</p>
         </div>
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
           <BookOpen className="text-indigo-600 mb-3" size={24} />
           <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Всего дисциплин</p>
-          <p className="text-3xl font-black text-slate-800">{stats.total_disciplines}</p>
+          <p className="text-3xl font-black text-slate-800">{stats.total_disciplines || 0}</p>
         </div>
       </div>
 
@@ -42,7 +42,7 @@ const GlobalAnalytics = () => {
          <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-8">Тренд понимания материала</h3>
          <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={stats.chart_data}>
+              <LineChart data={stats.chart_data || []}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis 
                   dataKey="name" 

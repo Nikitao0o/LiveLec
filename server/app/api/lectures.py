@@ -30,7 +30,6 @@ async def generate_unique_pin(db: AsyncSession) -> str:
 def serialize_lecture(lecture: Lecture) -> LectureResponse:
     return LectureResponse(
         id=lecture.id,
-        teacher_id=lecture.teacher_id,
         title=lecture.title,
         discipline=lecture.discipline,
         pin_code=lecture.pin_code,
@@ -41,10 +40,8 @@ def serialize_lecture(lecture: Lecture) -> LectureResponse:
 def serialize_question(question: Question) -> QuestionResponse:
     return QuestionResponse(
         id=question.id,
-        lecture_id=question.lecture_id,
         content=question.content,
         likes_count=question.likes_count,
-        is_answered=question.is_answered,
         created_at=question.created_at
     )
 
@@ -98,48 +95,11 @@ async def join_lecture(join_data: LectureJoin, db: AsyncSession = Depends(get_db
     if not lecture:
         raise HTTPException(status_code=404, detail="Lecture not found")
 
-    questions_result = await db.execute(
-        select(Question)
-        .where(Question.lecture_id == lecture.id)
-        .order_by(Question.likes_count.desc(), Question.created_at.asc())
-    )
-    
     return LectureJoinResponse(
         lecture_id=lecture.id,
         title=lecture.title,
-        discipline=lecture.discipline,
-        pin_code=lecture.pin_code,
-        status=lecture.status.value,
-        questions=[serialize_question(question) for question in questions_result.scalars().all()]
+        status=lecture.status.value
     )
-
-@router.get("/{lecture_id}", response_model=LectureResponse)
-async def get_lecture(
-    lecture_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    lecture = await get_owned_lecture(lecture_id, current_user.id, db)
-    return serialize_lecture(lecture)
-
-@router.post("/{lecture_id}/start", response_model=LectureResponse)
-async def start_lecture(
-    lecture_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    lecture = await get_owned_lecture(lecture_id, current_user.id, db)
-    if lecture.status == LectureStatus.FINISHED:
-        raise HTTPException(status_code=409, detail="Finished lecture cannot be started")
-
-    lecture.status = LectureStatus.ACTIVE
-    await db.commit()
-    await db.refresh(lecture)
-    await manager.broadcast_to_room(lecture.pin_code, {
-        "type": "LECTURE_STATUS",
-        "data": {"lecture_id": lecture.id, "status": lecture.status.value}
-    })
-    return serialize_lecture(lecture)
 
 @router.post("/{lecture_id}/finish", response_model=LectureResponse)
 async def finish_lecture(
@@ -151,10 +111,6 @@ async def finish_lecture(
     lecture.status = LectureStatus.FINISHED
     await db.commit()
     await db.refresh(lecture)
-    await manager.broadcast_to_room(lecture.pin_code, {
-        "type": "LECTURE_STATUS",
-        "data": {"lecture_id": lecture.id, "status": lecture.status.value}
-    })
     return serialize_lecture(lecture)
 
 @router.get("/{lecture_id}/analytics")
@@ -165,15 +121,12 @@ async def lecture_analytics(
 ):
     lecture = await get_owned_lecture(lecture_id, current_user.id, db)
     
-    # Сумма жалоб
     conf_res = await db.execute(select(func.coalesce(func.sum(Analytics.confusion_count), 0)).where(Analytics.lecture_id == lecture_id))
     confusion_sum = conf_res.scalar_one()
 
-    # Количество вопросов
     q_res = await db.execute(select(func.count(Question.id)).where(Question.lecture_id == lecture_id))
     questions_count = q_res.scalar_one()
 
-    # Данные для графика
     analytics_entries = await db.execute(select(Analytics).where(Analytics.lecture_id == lecture_id).order_by(Analytics.minute_mark))
     chart_data = []
     for entry in analytics_entries.scalars().all():
@@ -189,7 +142,7 @@ async def lecture_analytics(
         "created_at": lecture.created_at.isoformat(),
         "confusion_sum": confusion_sum,
         "questions_count": questions_count,
-        "students_count": max(12, questions_count * 2), # Эмуляция студентов
+        "students_count": max(12, questions_count * 2),
         "engagement": max(0, 100 - confusion_sum * 2),
         "chart_data": chart_data
     }

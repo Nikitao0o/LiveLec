@@ -95,6 +95,15 @@ async def websocket_endpoint(
             elif message_type == "AUDIO_CHUNK":
                 if user_type == "teacher": # Только преподаватель может отправлять аудио
                     await handle_audio_chunk(pin_code, message_data, db)
+
+            # --- ОБРАБОТКА ОПРОСОВ (КВИЗОВ) ---
+            elif message_type == "QUIZ_START":
+                if user_type == "teacher":
+                    await manager.broadcast_to_room(pin_code, {"type": "QUIZ_START", "data": message_data}, exclude_teacher=True)
+            
+            elif message_type == "QUIZ_ANSWER":
+                if user_type == "student":
+                    await manager.broadcast_to_teacher(pin_code, {"type": "QUIZ_ANSWER", "data": message_data})
             
             elif message_type == "PING":
                 await websocket.send_json({"type": "PONG"})

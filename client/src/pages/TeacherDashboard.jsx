@@ -9,6 +9,7 @@ const TeacherDashboard = () => {
   const [newLecture, setNewLecture] = useState({ title: '', subject: '' });
   const [lectures, setLectures] = useState([]);
   const [toast, setToast] = useState(null);
+  const [teacherName, setTeacherName] = useState("преподаватель");
 
   const DISCIPLINES = [
     { value: 'Базы Данных', label: 'Базы Данных' },
@@ -22,6 +23,8 @@ const TeacherDashboard = () => {
   };
 
   useEffect(() => {
+    api.get('/auth/me').then(res => setTeacherName(res.data.name)).catch(() => {});
+    
     const fetchLectures = async () => {
       try {
         const response = await api.get('/lectures/');
@@ -78,7 +81,7 @@ const TeacherDashboard = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10 text-left">
         <div>
           <h2 className="text-2xl md:text-3xl font-black text-slate-800 tracking-tight leading-none">Личный кабинет</h2>
-          <p className="text-slate-400 font-medium mt-1">Добро пожаловать, преподаватель</p>
+          <p className="text-slate-400 font-medium mt-1">Добро пожаловать, {teacherName}</p>
         </div>
         <button 
           onClick={() => setIsModalOpen(true)}
