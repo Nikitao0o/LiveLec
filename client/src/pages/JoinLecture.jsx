@@ -1,12 +1,18 @@
 import React, { useState, useRef } from 'react';
-import { ArrowRight, GraduationCap } from 'lucide-react';
+import { ArrowRight, GraduationCap, AlertCircle, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom'; 
 import api from '../api';
 
 const JoinLecture = () => {
   const [pin, setPin] = useState(['', '', '', '', '', '']);
+  const [toast, setToast] = useState(null); 
   const inputRefs = useRef([]);
   const navigate = useNavigate();
+
+  const showToast = (message) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 4000);
+  };
 
   const handleChange = (value, index) => {
     if (isNaN(value)) return;
@@ -14,14 +20,12 @@ const JoinLecture = () => {
     newPin[index] = value;
     setPin(newPin);
 
-    // Авто-переход на следующее поле
     if (value !== '' && index < 5) {
       inputRefs.current[index + 1].focus();
     }
   };
 
   const handleKeyDown = (e, index) => {
-    // Удаление (Backspace) возвращает на предыдущее поле
     if (e.key === 'Backspace' && pin[index] === '' && index > 0) {
       inputRefs.current[index - 1].focus();
     }
@@ -29,8 +33,10 @@ const JoinLecture = () => {
 
   const handleJoin = async () => {
     const currentPin = pin.join('');
+    setToast(null);
+
     if (currentPin.length !== 6) {
-      alert('Введите 6-значный код');
+      showToast('Пожалуйста, введите 6-значный PIN-код лекции');
       return;
     }
 
@@ -40,17 +46,14 @@ const JoinLecture = () => {
       });
       
       const lectureData = response.data;
-      
-      // Сохраняем PIN и данные лекции
       localStorage.setItem('currentPin', currentPin);
       localStorage.setItem('lectureData', JSON.stringify(lectureData));
       
-      // Переходим в интерфейс студента
       navigate('/lecture');
       
     } catch (error) {
       console.error('Ошибка входа:', error.response?.data);
-      alert('Лекция не найдена или код неверен');
+      showToast('Лекция не найдена или PIN-код неверен');
     }
   };
 
@@ -59,13 +62,21 @@ const JoinLecture = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 md:p-8">
-      {/* Контейнер: на мобилке w-full, на десктопе max-w-md (карточка) */}
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 md:p-8 relative">
+      
+      {toast && (
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-rose-500 text-white px-6 py-4 rounded-2xl shadow-xl shadow-rose-500/20 flex items-center gap-3 z-50 animate-in slide-in-from-top-4 fade-in duration-300 w-[90%] max-w-sm">
+          <AlertCircle size={24} className="shrink-0" />
+          <p className="text-sm font-bold flex-1 leading-tight">{toast}</p>
+          <button onClick={() => setToast(null)} className="p-1 hover:bg-white/20 rounded-lg transition-colors shrink-0 cursor-pointer">
+            <X size={18} />
+          </button>
+        </div>
+      )}
+
       <div className="w-full max-w-md bg-white rounded-[2rem] md:rounded-[3rem] shadow-2xl shadow-indigo-100 overflow-hidden border border-slate-100 flex flex-col">
         
-        {/* Верхняя часть (Брендинг) */}
         <div className="bg-indigo-600 p-8 md:p-12 text-center text-white relative overflow-hidden">
-          {/* Декоративный фон (круги) */}
           <div className="absolute top-0 right-0 -mr-10 -mt-10 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
           <div className="absolute bottom-0 left-0 -ml-10 -mb-10 w-32 h-32 bg-indigo-400/20 rounded-full blur-2xl"></div>
 
@@ -78,14 +89,12 @@ const JoinLecture = () => {
           </div>
         </div>
 
-        {/* Форма ввода */}
         <div className="p-8 md:p-10 flex flex-col items-center text-center">
           <h2 className="text-2xl font-bold text-slate-800 mb-2">Присоединиться</h2>
           <p className="text-sm text-slate-400 mb-8 max-w-[250px]">
             Введите 6-значный код доступа к текущей лекции
           </p>
 
-          {/* PIN-код сегменты */}
           <div className="flex gap-2 mb-10">
             {pin.map((data, index) => (
               <input
@@ -103,13 +112,12 @@ const JoinLecture = () => {
 
           <button 
             onClick={handleJoin} 
-            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-xl shadow-indigo-200 flex items-center justify-center gap-3 transition-all hover:translate-y-[-2px] active:scale-95 group"
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-xl shadow-indigo-200 flex items-center justify-center gap-3 transition-all hover:translate-y-[-2px] active:scale-95 group cursor-pointer"
           >
             <span className="text-lg">Войти в лекцию</span>
             <ArrowRight size={22} strokeWidth={3} className="group-hover:translate-x-1 transition-transform" />
           </button>
 
-          {/* Переход для преподавателя */}
           <div className="mt-12 w-full pt-8 border-t border-slate-100">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Панель управления</p>
             <button 

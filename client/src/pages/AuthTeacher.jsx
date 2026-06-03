@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, User, ArrowLeft, GraduationCap, ChevronRight } from 'lucide-react';
+import { Mail, Lock, User, ArrowLeft, GraduationCap, ChevronRight, AlertCircle, X } from 'lucide-react';
 import api from '../api';
 
 const AuthTeacher = () => {
   const [isLogin, setIsLogin] = useState(true);
+  const [toast, setToast] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -13,8 +14,15 @@ const AuthTeacher = () => {
   
   const navigate = useNavigate();
 
+  // Функция показа уведомления на 4 секунды
+  const showToast = (message) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 4000);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setToast(null); // Сбрасываем старую ошибку
     
     try {
       if (isLogin) {
@@ -45,17 +53,34 @@ const AuthTeacher = () => {
       
     } catch (error) {
       console.error('Ошибка авторизации:', error.response?.data || error.message);
-      alert(error.response?.data?.detail || 'Произошла ошибка при авторизации');
+      
+      // Переводим технические ошибки бэкенда в понятный UX-формат
+      const errorMsg = error.response?.data?.detail || 'Произошла ошибка при соединении с сервером';
+      let userFriendlyMsg = errorMsg;
+      if (errorMsg === "Invalid credentials") userFriendlyMsg = "Неверный email или пароль";
+      if (errorMsg === "Email already registered") userFriendlyMsg = "Этот Email уже зарегистрирован";
+      
+      showToast(userFriendlyMsg); // Вызываем наш красивый Toast вместо alert()
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 md:p-8">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 md:p-8 relative">
       
+      {toast && (
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-rose-500 text-white px-6 py-4 rounded-2xl shadow-xl shadow-rose-500/20 flex items-center gap-3 z-50 animate-in slide-in-from-top-4 fade-in duration-300 w-[90%] max-w-sm">
+          <AlertCircle size={24} className="shrink-0" />
+          <p className="text-sm font-bold flex-1 leading-tight">{toast}</p>
+          <button onClick={() => setToast(null)} className="p-1 hover:bg-white/20 rounded-lg transition-colors shrink-0 cursor-pointer">
+            <X size={18} />
+          </button>
+        </div>
+      )}
+
       {/* Кнопка "Назад" */}
       <button 
         onClick={() => navigate('/')}
-        className="absolute top-6 left-6 flex items-center gap-2 text-slate-400 hover:text-indigo-600 font-bold transition-colors text-[10px] uppercase tracking-[0.2em]"
+        className="absolute top-6 left-6 flex items-center gap-2 text-slate-400 hover:text-indigo-600 font-bold transition-colors text-[10px] uppercase tracking-[0.2em] cursor-pointer"
       >
         <ArrowLeft size={16} strokeWidth={3} /> На главную
       </button>
@@ -124,7 +149,7 @@ const AuthTeacher = () => {
               </div>
             </div>
 
-            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-5 rounded-2xl shadow-xl shadow-indigo-100 flex items-center justify-center gap-3 transition-all active:scale-95 uppercase text-xs tracking-widest mt-6 leading-none">
+            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-5 rounded-2xl shadow-xl shadow-indigo-100 flex items-center justify-center gap-3 transition-all active:scale-95 uppercase text-xs tracking-widest mt-6 leading-none cursor-pointer">
               <span>{isLogin ? 'Войти в кабинет' : 'Зарегистрироваться'}</span>
               <ChevronRight size={20} strokeWidth={3} />
             </button>
@@ -137,7 +162,7 @@ const AuthTeacher = () => {
             </p>
             <button 
               onClick={() => setIsLogin(!isLogin)}
-              className="text-xs font-black text-indigo-600 hover:text-indigo-800 transition-colors uppercase tracking-widest"
+              className="text-xs font-black text-indigo-600 hover:text-indigo-800 transition-colors uppercase tracking-widest cursor-pointer"
             >
               {isLogin ? 'Создать аккаунт лектора' : 'Вернуться к входу'}
             </button>
