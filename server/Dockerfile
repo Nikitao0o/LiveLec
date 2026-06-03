@@ -4,7 +4,12 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Системные зависимости (если нужны для psycopg2 и т.п.)
-RUN apt-get update && apt-get install -y gcc ffmpeg && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    gcc ffmpeg \
+    libreoffice-core libreoffice-writer-nogui \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /app/uploads/lectures
 
 # Копируем зависимости
 COPY requirements.txt .

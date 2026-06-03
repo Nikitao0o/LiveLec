@@ -1,5 +1,8 @@
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import PlainTextResponse
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Query
+from fastapi.responses import PlainTextResponse, FileResponse
+from pathlib import Path
+import shutil
+import tempfile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.core.database import get_db
@@ -8,8 +11,15 @@ from app.models.question import Question
 from app.models.analytics import Analytics
 from app.models.transcript import TranscriptSegment
 from app.models.user import User
-from app.api.auth import get_current_user
-from app.schemas.lecture import LectureCreate, LectureResponse, LectureJoin, LectureJoinResponse
+from app.api.auth import get_current_user, get_optional_user
+from app.schemas.lecture import (
+    LectureCreate,
+    LectureResponse,
+    LectureJoin,
+    LectureJoinResponse,
+    PresentationMeta,
+)
+from app.services.presentation import process_presentation_file, lecture_slides_dir
 from app.schemas.question import QuestionResponse
 from app.ws.manager import manager
 import random
@@ -183,3 +193,77 @@ async def export_lecture(
         media_type=media_type, 
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
+
+@router.get("/{lecture_id}/presentation", response_model=PresentationMeta)
+async def get_presentation_meta(
+    lecture_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lecture = await get_owned_lecture(lecture_id, current_user.id, db)
+    return PresentationMeta(
+        slide_count=lecture.slide_count or 0,
+        current_slide=lecture.current_slide or 1,
+    )
+
+@router.post("/{lecture_id}/presentation", response_model=PresentationMeta)
+async def upload_presentation(
+    lecture_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lecture = await get_owned_lecture(lecture_id, current_user.id, db)
+    filename = file.filename or ""
+    extension = Path(filename).suffix.lower()
+    if extension not in {".pdf", ".pptx"}:
+        raise HTTPException(status_code=400, detail="Supported formats: PDF, PPTX")
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = Path(tmp.name)
+
+    try:
+        slide_count = process_presentation_file(lecture.id, tmp_path, extension)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    lecture.slide_count = slide_count
+    lecture.current_slide = 1 if slide_count > 0 else 0
+    await db.commit()
+    await db.refresh(lecture)
+
+    return PresentationMeta(slide_count=lecture.slide_count, current_slide=lecture.current_slide)
+
+@router.get("/{lecture_id}/slides/{slide_number}")
+async def get_slide_image(
+    lecture_id: int,
+    slide_number: int,
+    pin: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
+):
+    result = await db.execute(select(Lecture).where(Lecture.id == lecture_id))
+    lecture = result.scalar_one_or_none()
+    if not lecture:
+        raise HTTPException(status_code=404, detail="Lecture not found")
+
+    allowed = False
+    if current_user and lecture.teacher_id == current_user.id:
+        allowed = True
+    elif pin and pin == lecture.pin_code:
+        allowed = True
+
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if slide_number < 1 or slide_number > (lecture.slide_count or 0):
+        raise HTTPException(status_code=404, detail="Slide not found")
+
+    slide_path = lecture_slides_dir(lecture_id) / f"slide_{slide_number:03d}.png"
+    if not slide_path.exists():
+        raise HTTPException(status_code=404, detail="Slide file not found")
+
+    return FileResponse(slide_path, media_type="image/png")

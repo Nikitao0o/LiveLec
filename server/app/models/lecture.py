@@ -19,6 +19,8 @@ class Lecture(Base):
     pin_code = Column(String(6), unique=True, index=True, nullable=False)
     status = Column(Enum(LectureStatus), default=LectureStatus.WAITING)
     peak_students = Column(Integer, default=0, nullable=False)
+    slide_count = Column(Integer, default=0, nullable=False)
+    current_slide = Column(Integer, default=1, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Связь с преподавателем

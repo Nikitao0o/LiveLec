@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, ShieldCheck, X, KeyRound, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Lock, ShieldCheck, X, KeyRound, CheckCircle2, AlertCircle, BookOpen, Plus, Trash2 } from 'lucide-react';
 import api from '../api';
 
 const TeacherSettings = () => {
@@ -9,17 +9,51 @@ const TeacherSettings = () => {
   const [toast, setToast] = useState(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [disciplines, setDisciplines] = useState([]);
+  const [newDiscipline, setNewDiscipline] = useState('');
 
   const showToast = (message, isError = true) => {
     setToast({ message, isError });
     setTimeout(() => setToast(null), 4000);
   };
 
+  const loadDisciplines = () => {
+    api.get('/disciplines/')
+      .then((res) => setDisciplines(res.data))
+      .catch(() => showToast('Не удалось загрузить дисциплины'));
+  };
+
   useEffect(() => {
     api.get('/auth/me')
       .then((res) => setProfile({ name: res.data.name, email: res.data.email }))
       .catch(() => showToast('Не удалось загрузить профиль'));
+    loadDisciplines();
   }, []);
+
+  const handleAddDiscipline = async (e) => {
+    e.preventDefault();
+    const name = newDiscipline.trim();
+    if (!name) return;
+    try {
+      await api.post('/disciplines/', { name });
+      setNewDiscipline('');
+      loadDisciplines();
+      showToast('Дисциплина добавлена', false);
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      showToast(detail === 'Discipline already exists' ? 'Такая дисциплина уже есть' : detail || 'Не удалось добавить');
+    }
+  };
+
+  const handleDeleteDiscipline = async (id) => {
+    try {
+      await api.delete(`/disciplines/${id}`);
+      loadDisciplines();
+      showToast('Дисциплина удалена', false);
+    } catch {
+      showToast('Не удалось удалить дисциплину');
+    }
+  };
 
   const handleProfileSave = async (e) => {
     e.preventDefault();
@@ -123,10 +157,54 @@ const TeacherSettings = () => {
           </button>
         </form>
 
-        <section className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm leading-none text-left">
-          <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2 leading-none text-left">
-            <Lock size={16} /> Безопасность
+        <section className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6 leading-none text-left">
+          <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-2 flex items-center gap-2">
+            <BookOpen size={16} /> Учебные дисциплины
           </h3>
+          <p className="text-xs text-slate-400 font-medium">
+            Эти предметы будут доступны при создании новой лекции.
+          </p>
+          <form onSubmit={handleAddDiscipline} className="flex gap-3">
+            <input
+              type="text"
+              value={newDiscipline}
+              onChange={(e) => setNewDiscipline(e.target.value)}
+              placeholder="Например: Машинное обучение"
+              className="flex-1 bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-5 outline-none focus:border-indigo-500 font-bold text-sm"
+            />
+            <button
+              type="submit"
+              className="bg-indigo-600 text-white px-5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-700 flex items-center gap-2"
+            >
+              <Plus size={16} /> Добавить
+            </button>
+          </form>
+          <div className="space-y-2">
+            {disciplines.map((item) => (
+              <div key={item.id} className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-2xl px-5 py-3">
+                <span className="font-bold text-slate-800 text-sm">{item.name}</span>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteDiscipline(item.id)}
+                  className="text-rose-500 hover:text-rose-700 p-2"
+                  aria-label="Удалить"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+            {disciplines.length === 0 && (
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest text-center py-4">
+                Список пуст — добавьте первую дисциплину
+              </p>
+            )}
+          </div>
+        </section>
+
+        <section className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm leading-none text-left">
+            <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2 leading-none text-left">
+               <Lock size={16} /> Безопасность
+            </h3>
           <button
             type="button"
             onClick={() => setIsModalOpen(true)}

@@ -12,11 +12,7 @@ const TeacherDashboard = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [teacherName, setTeacherName] = useState("преподаватель");
 
-  const DISCIPLINES = [
-    { value: 'Базы Данных', label: 'Базы Данных' },
-    { value: 'Программная инженерия', label: 'Программная инженерия' },
-    { value: 'Сети и телекоммуникации', label: 'Сети и телекоммуникации' },
-  ];
+  const [disciplines, setDisciplines] = useState([]);
 
   const showToast = (message) => {
     setToast(message);
@@ -35,6 +31,10 @@ const TeacherDashboard = () => {
       }
     };
     fetchLectures();
+
+    api.get('/disciplines/')
+      .then((res) => setDisciplines(res.data))
+      .catch(() => setDisciplines([]));
   }, []);
 
   const handleCreateLecture = async (e) => {
@@ -224,11 +224,17 @@ const TeacherDashboard = () => {
                       <BookOpen className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 leading-none" size={18} />
                       <select 
                         className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 outline-none focus:border-indigo-500 focus:bg-white transition-all font-bold text-sm appearance-none leading-none cursor-pointer"
+                        value={newLecture.subject}
                         onChange={(e) => setNewLecture({...newLecture, subject: e.target.value})}
                         required
+                        disabled={disciplines.length === 0}
                       >
-                         <option value="">Выберите предмет</option>
-                         {DISCIPLINES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                         <option value="">
+                           {disciplines.length === 0 ? 'Добавьте дисциплины в настройках' : 'Выберите предмет'}
+                         </option>
+                         {disciplines.map((d) => (
+                           <option key={d.id} value={d.name}>{d.name}</option>
+                         ))}
                       </select>
                    </div>
                 </div>

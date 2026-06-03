@@ -27,3 +27,7 @@ class LectureJoinResponse(BaseModel):
     pin_code: str
     status: str
     questions: List[QuestionResponse] = []
+
+class PresentationMeta(BaseModel):
+    slide_count: int
+    current_slide: int

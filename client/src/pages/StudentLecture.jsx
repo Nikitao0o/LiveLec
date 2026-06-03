@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useNavigate } from 'react-router-dom';
+import { getSlideImageUrl } from '../utils/slides';
 
 const StudentLecture = () => {
   const navigate = useNavigate();
@@ -27,10 +28,27 @@ const StudentLecture = () => {
   const [quizData, setQuizData] = useState(null);
   const [quizTimer, setQuizTimer] = useState(0);
   const [selectedOption, setSelectedOption] = useState(null);
+  const [lectureId, setLectureId] = useState(initialData.lecture_id || null);
+  const [currentSlide, setCurrentSlide] = useState(1);
+  const [slideCount, setSlideCount] = useState(0);
+
+  const slideImageUrl = getSlideImageUrl(lectureId, currentSlide, pinCode);
 
   useEffect(() => {
     if (!lastMessage) return;
     switch (lastMessage.type) {
+      case 'CONNECTED':
+        if (lastMessage.data.lecture_id) setLectureId(lastMessage.data.lecture_id);
+        if (lastMessage.data.slide_count) {
+          setSlideCount(lastMessage.data.slide_count);
+          setCurrentSlide(lastMessage.data.current_slide || 1);
+        }
+        break;
+      case 'SLIDE_CHANGE':
+        setCurrentSlide(lastMessage.data.slide_number);
+        if (lastMessage.data.total_slides) setSlideCount(lastMessage.data.total_slides);
+        if (lastMessage.data.lecture_id) setLectureId(lastMessage.data.lecture_id);
+        break;
       case 'PARTICIPANTS_UPDATE':
         setParticipantsCount(lastMessage.data.count);
         break;
@@ -139,14 +157,26 @@ const StudentLecture = () => {
             </p>
           </div>
           <div className="flex-1 min-h-[250px] md:min-h-[400px] bg-white rounded-[2rem] border border-slate-200 shadow-sm relative overflow-hidden flex flex-col">
-            <div className="absolute top-4 right-4 bg-indigo-600 text-white px-3 py-1 rounded-full text-xs font-bold z-10">Слайд 4 / 12</div>
-            <div className="flex-1 bg-slate-950 flex items-center justify-center p-10 text-center">
-               <div className="space-y-4">
-                  <h3 className="text-2xl md:text-4xl font-black text-white uppercase tracking-tighter italic leading-tight">
-                    Транзакции <br/> & ACID
+            <div className="absolute top-4 right-4 bg-indigo-600 text-white px-3 py-1 rounded-full text-xs font-bold z-10">
+              {slideCount > 0 ? `Слайд ${currentSlide} / ${slideCount}` : 'Ожидание презентации'}
+            </div>
+            <div className="flex-1 bg-slate-950 flex items-center justify-center p-4 overflow-hidden">
+              {slideCount > 0 && slideImageUrl ? (
+                <img
+                  src={slideImageUrl}
+                  alt={`Слайд ${currentSlide}`}
+                  className="max-w-full max-h-full object-contain rounded-lg"
+                />
+              ) : (
+                <div className="text-center text-white px-8">
+                  <h3 className="text-xl md:text-2xl font-black uppercase tracking-tighter italic leading-tight opacity-80">
+                    {initialData.title || 'Лекция'}
                   </h3>
-                  <div className="w-20 h-1.5 bg-indigo-500 mx-auto rounded-full"></div>
-               </div>
+                  <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-4">
+                    Преподаватель ещё не загрузил слайды
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>

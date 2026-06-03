@@ -1,19 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Users, MessageSquare, PlayCircle, Mic, 
   ChevronLeft, ChevronRight, XCircle, BarChart3, X,
-  Triangle, Square, Circle, Diamond, AlertCircle
+  Triangle, Square, Circle, Diamond, AlertCircle, Upload, FileText
 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import api from '../api';
+import { getSlideImageUrl } from '../utils/slides';
 
 const TeacherLectureControl = () => {
   const navigate = useNavigate();
   const lecture = JSON.parse(localStorage.getItem('currentLecture') || '{}');
   const pinCode = lecture.pin_code || '---';
+  const lectureId = lecture.id;
+  const fileInputRef = useRef(null);
 
   const { isConnected, lastMessage, sendMessage } = useWebSocket(pinCode, 'teacher');
   const [participantsCount, setParticipantsCount] = useState(0);
@@ -22,6 +25,10 @@ const TeacherLectureControl = () => {
     Array.from({ length: 6 }).map((_, i) => ({ time: `-${5-i}m`, value: 0 }))
   );
   const [toast, setToast] = useState(null);
+
+  const [slideCount, setSlideCount] = useState(0);
+  const [currentSlide, setCurrentSlide] = useState(1);
+  const [isUploading, setIsUploading] = useState(false);
 
   const showToast = (message) => {
     setToast(message);
@@ -44,6 +51,17 @@ const TeacherLectureControl = () => {
   });
 
   const totalVotes = Object.values(quizResults).reduce((a, b) => a + b, 0);
+  const slideImageUrl = getSlideImageUrl(lectureId, currentSlide, pinCode);
+
+  useEffect(() => {
+    if (!lectureId) return;
+    api.get(`/lectures/${lectureId}/presentation`)
+      .then((res) => {
+        setSlideCount(res.data.slide_count || 0);
+        setCurrentSlide(res.data.current_slide || 1);
+      })
+      .catch(() => {});
+  }, [lectureId]);
 
   useEffect(() => {
     if (!lastMessage) return;
@@ -85,6 +103,47 @@ const TeacherLectureControl = () => {
     }
     return () => clearTimeout(timer);
   }, [isQuizActive, quizTimer]);
+
+  const broadcastSlide = (slideNumber) => {
+    if (!slideCount) return;
+    const next = Math.max(1, Math.min(slideNumber, slideCount));
+    setCurrentSlide(next);
+    sendMessage('SLIDE_CHANGE', { slide_number: next });
+  };
+
+  const handlePresentationUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file || !lectureId) return;
+
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (!['pdf', 'pptx'].includes(ext)) {
+      showToast('Поддерживаются только PDF и PPTX');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    setIsUploading(true);
+
+    try {
+      const res = await api.post(`/lectures/${lectureId}/presentation`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000,
+      });
+      setSlideCount(res.data.slide_count);
+      setCurrentSlide(res.data.current_slide || 1);
+      if (res.data.slide_count > 0) {
+        sendMessage('SLIDE_CHANGE', { slide_number: res.data.current_slide || 1 });
+      }
+      showToast(`Презентация загружена: ${res.data.slide_count} слайдов`);
+    } catch (err) {
+      const detail = err.response?.data?.detail || 'Не удалось загрузить презентацию';
+      showToast(typeof detail === 'string' ? detail : 'Ошибка загрузки');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const handleStartQuiz = (e) => {
     e.preventDefault();
@@ -218,15 +277,60 @@ const TeacherLectureControl = () => {
               </div>
             )}
 
-            <div className="flex-1 flex items-center justify-center p-10 text-center text-white leading-none">
-               <h2 className="text-4xl font-black uppercase tracking-tighter italic leading-tight leading-none">
-                  {lecture.title || "Лекция"}
-               </h2>
+            <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between gap-3">
+              <div className="bg-black/50 text-white px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest">
+                {slideCount > 0 ? `Слайд ${currentSlide} / ${slideCount}` : 'Презентация не загружена'}
+              </div>
+              <label className={`bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 cursor-pointer transition-colors ${isUploading ? 'opacity-60 pointer-events-none' : ''}`}>
+                <Upload size={14} />
+                {isUploading ? 'Загрузка…' : 'Загрузить PDF/PPTX'}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                  className="hidden"
+                  onChange={handlePresentationUpload}
+                />
+              </label>
+            </div>
+
+            <div className="flex-1 flex items-center justify-center p-6 pt-16 overflow-hidden">
+              {slideCount > 0 && slideImageUrl ? (
+                <img
+                  src={slideImageUrl}
+                  alt={`Слайд ${currentSlide}`}
+                  className="max-w-full max-h-full object-contain rounded-xl shadow-2xl bg-white"
+                />
+              ) : (
+                <div className="text-center text-white px-8">
+                  <FileText size={48} className="mx-auto mb-4 opacity-40" />
+                  <h2 className="text-2xl font-black uppercase tracking-tighter italic leading-tight">
+                    {lecture.title || 'Лекция'}
+                  </h2>
+                  <p className="text-indigo-200 text-xs font-bold uppercase tracking-widest mt-4">
+                    Загрузите PDF или PPTX для показа слайдов студентам
+                  </p>
+                </div>
+              )}
             </div>
             
             <div className="p-4 bg-black/20 backdrop-blur-sm flex justify-between items-center px-10 text-white shrink-0 leading-none">
-               <button onClick={() => sendMessage('SLIDE_CHANGE', { slide_number: 3 })} className="text-white/60 hover:text-white transition-colors flex items-center gap-2 font-bold uppercase text-[10px] tracking-widest leading-none cursor-pointer"><ChevronLeft size={16}/> Назад</button>
-               <button onClick={() => sendMessage('SLIDE_CHANGE', { slide_number: 5 })} className="text-white hover:text-indigo-400 transition-colors flex items-center gap-2 font-black uppercase text-[10px] tracking-widest leading-none cursor-pointer">Вперед <ChevronRight size={16}/></button>
+               <button
+                 type="button"
+                 disabled={!slideCount || currentSlide <= 1}
+                 onClick={() => broadcastSlide(currentSlide - 1)}
+                 className="text-white/60 hover:text-white disabled:opacity-30 transition-colors flex items-center gap-2 font-bold uppercase text-[10px] tracking-widest leading-none cursor-pointer"
+               >
+                 <ChevronLeft size={16}/> Назад
+               </button>
+               <button
+                 type="button"
+                 disabled={!slideCount || currentSlide >= slideCount}
+                 onClick={() => broadcastSlide(currentSlide + 1)}
+                 className="text-white hover:text-indigo-400 disabled:opacity-30 transition-colors flex items-center gap-2 font-black uppercase text-[10px] tracking-widest leading-none cursor-pointer"
+               >
+                 Вперед <ChevronRight size={16}/>
+               </button>
             </div>
           </div>
 

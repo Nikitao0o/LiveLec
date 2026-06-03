@@ -66,9 +66,20 @@ async def websocket_endpoint(
                 "user_type": user_type,
                 "title": lecture.title,
                 "discipline": lecture.discipline,
-                "status": lecture.status.value
+                "status": lecture.status.value,
+                "slide_count": lecture.slide_count or 0,
+                "current_slide": lecture.current_slide or 1,
             }
         })
+        if user_type == "student" and lecture.slide_count:
+            await websocket.send_json({
+                "type": "SLIDE_CHANGE",
+                "data": {
+                    "slide_number": lecture.current_slide or 1,
+                    "total_slides": lecture.slide_count,
+                    "lecture_id": lecture.id,
+                }
+            })
         await manager.broadcast_participants(pin_code)
         
         # Обработка входящих сообщений
@@ -95,7 +106,8 @@ async def websocket_endpoint(
                 await handle_confusion_click(pin_code, message_data, db)
             
             elif message_type == "SLIDE_CHANGE":
-                await handle_slide_change(pin_code, message_data)
+                if user_type == "teacher":
+                    await handle_slide_change(pin_code, message_data, db)
                 
             # --- ОБРАБОТКА АУДИО ---
             elif message_type == "AUDIO_CHUNK":
@@ -216,16 +228,28 @@ async def handle_confusion_click(pin_code: str, data: dict, db: AsyncSession):
     })
 
 
-async def handle_slide_change(pin_code: str, data: dict):
+async def handle_slide_change(pin_code: str, data: dict, db: AsyncSession):
     """Обработка смены слайда (только от преподавателя)"""
     slide_number = data.get("slide_number")
     if slide_number is None:
         return
-    
-    # Рассылаем студентам номер слайда
+
+    result = await db.execute(select(Lecture).where(Lecture.pin_code == pin_code))
+    lecture = result.scalar_one_or_none()
+    if not lecture or not lecture.slide_count:
+        return
+
+    slide_number = max(1, min(int(slide_number), lecture.slide_count))
+    lecture.current_slide = slide_number
+    await db.commit()
+
     await manager.broadcast_to_room(pin_code, {
         "type": "SLIDE_CHANGE",
-        "data": {"slide_number": slide_number}
+        "data": {
+            "slide_number": slide_number,
+            "total_slides": lecture.slide_count,
+            "lecture_id": lecture.id,
+        }
     }, exclude_teacher=True)
 
 

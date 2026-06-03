@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import engine, Base
-from app.api import auth_router, lectures_router, questions_router, analytics_router
+from app.api import auth_router, lectures_router, questions_router, analytics_router, disciplines_router
 from app.ws.endpoint import router as ws_router 
 
 app = FastAPI(
@@ -25,13 +25,14 @@ app.include_router(auth_router)
 app.include_router(lectures_router)
 app.include_router(questions_router)
 app.include_router(analytics_router)
+app.include_router(disciplines_router)
 
 # Подключение WebSocket-роутера
 app.include_router(ws_router)
 
 @app.on_event("startup")
 async def startup():
-    from app.models import User, Lecture, Question, Analytics, TranscriptSegment
+    from app.models import User, Lecture, Question, Analytics, TranscriptSegment, TeacherDiscipline
     
     # Пытаемся подключиться к БД 5 раз с интервалом, давая PostgreSQL время на запуск
     for _ in range(5):
@@ -41,6 +42,12 @@ async def startup():
                 await conn.run_sync(Base.metadata.create_all)
                 await conn.execute(text(
                     "ALTER TABLE lectures ADD COLUMN IF NOT EXISTS peak_students INTEGER NOT NULL DEFAULT 0"
+                ))
+                await conn.execute(text(
+                    "ALTER TABLE lectures ADD COLUMN IF NOT EXISTS slide_count INTEGER NOT NULL DEFAULT 0"
+                ))
+                await conn.execute(text(
+                    "ALTER TABLE lectures ADD COLUMN IF NOT EXISTS current_slide INTEGER NOT NULL DEFAULT 1"
                 ))
             print("База данных успешно подключена и готова!")
             break

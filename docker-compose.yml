@@ -18,6 +18,8 @@ services:
       - db
     environment:
       DATABASE_URL: postgresql+asyncpg://user:password@db:5432/app
+    volumes:
+      - lecture_uploads:/app/uploads
 
   client:
     build: ./client
@@ -29,3 +31,4 @@ services:
 
 volumes:
   postgres_data:
+  lecture_uploads:
