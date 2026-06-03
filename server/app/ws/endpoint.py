@@ -1,8 +1,10 @@
+import asyncio
 import json
+import logging
 from fastapi import WebSocket, WebSocketDisconnect, APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from app.core.database import get_db
+from app.core.database import get_db, AsyncSessionLocal
 from app.models.lecture import Lecture, LectureStatus
 from app.models.question import Question
 from app.models.analytics import Analytics
@@ -16,6 +18,8 @@ from app.services.confusion import (
     get_confusion_session,
     _utc_now,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -126,8 +130,8 @@ async def websocket_endpoint(
                 
             # --- ОБРАБОТКА АУДИО ---
             elif message_type == "AUDIO_CHUNK":
-                if user_type == "teacher": # Только преподаватель может отправлять аудио
-                    await handle_audio_chunk(pin_code, message_data, db)
+                if user_type == "teacher":
+                    await handle_audio_chunk(pin_code, message_data, db, websocket)
 
             # --- ОБРАБОТКА ОПРОСОВ (КВИЗОВ) ---
             elif message_type == "QUIZ_START":
@@ -309,35 +313,87 @@ async def handle_slide_change(pin_code: str, data: dict, db: AsyncSession):
     }, exclude_teacher=True)
 
 
-# --- НОВЫЙ ХЭНДЛЕР ДЛЯ АУДИО ---
-async def handle_audio_chunk(pin_code: str, data: dict, db: AsyncSession):
-    """Обработка аудио чанков от преподавателя"""
+async def _notify_teacher_asr(pin_code: str, payload: dict) -> None:
+    await manager.broadcast_to_teacher(
+        pin_code,
+        {"type": "ASR_STATUS", "data": payload},
+    )
+
+
+async def _run_asr_pipeline(pin_code: str, lecture_id: int, base64_chunk: str) -> None:
+    try:
+        recognized_text = await asr_service.process_audio_chunk(base64_chunk)
+        text = (recognized_text or "").strip()
+
+        if text:
+            async with AsyncSessionLocal() as session:
+                session.add(
+                    TranscriptSegment(
+                        lecture_id=lecture_id,
+                        start_ms=0,
+                        end_ms=0,
+                        raw_text=text,
+                    )
+                )
+                await session.commit()
+
+            await manager.broadcast_to_room(
+                pin_code,
+                {"type": "ASR_TEXT", "data": {"text": text}},
+                exclude_teacher=True,
+            )
+            await _notify_teacher_asr(
+                pin_code,
+                {"status": "ok", "text": text},
+            )
+        else:
+            await _notify_teacher_asr(
+                pin_code,
+                {"status": "empty", "message": "Речь не распознана в этом фрагменте"},
+            )
+    except Exception as exc:
+        logger.exception("ASR pipeline failed for lecture %s: %s", lecture_id, exc)
+        await _notify_teacher_asr(
+            pin_code,
+            {"status": "error", "message": str(exc)},
+        )
+
+
+async def handle_audio_chunk(
+    pin_code: str,
+    data: dict,
+    db: AsyncSession,
+    websocket: WebSocket,
+):
+    """Обработка аудио чанков от преподавателя (в фоне, не блокируя WS)."""
     base64_chunk = data.get("chunk")
     if not base64_chunk:
         return
-        
+
     result = await db.execute(select(Lecture).where(Lecture.pin_code == pin_code))
     lecture = result.scalar_one_or_none()
-    
-    if not lecture or lecture.status == LectureStatus.FINISHED:
+
+    if not lecture:
+        await websocket.send_json(
+            {
+                "type": "ASR_STATUS",
+                "data": {"status": "error", "message": "Лекция не найдена"},
+            }
+        )
+        return
+    if lecture.status == LectureStatus.FINISHED:
         return
 
-    # 1. Распознаем аудио через Whisper
-    recognized_text = await asr_service.process_audio_chunk(base64_chunk)
-    
-    if recognized_text and recognized_text.strip():
-        # 2. Сохраняем сырой текст в БД
-        segment = TranscriptSegment(
-            lecture_id=lecture.id,
-            start_ms=0, # Для MVP оставляем 0, в будущем можно считать таймкод от начала лекции
-            end_ms=0,
-            raw_text=recognized_text
-        )
-        db.add(segment)
-        await db.commit()
-        
-        # 3. Рассылаем субтитры всем студентам
-        await manager.broadcast_to_room(pin_code, {
-            "type": "ASR_TEXT",
-            "data": {"text": recognized_text}
-        }, exclude_teacher=True)
+    chunk_bytes = len(base64_chunk) * 3 // 4
+    logger.info(
+        "AUDIO_CHUNK lecture_id=%s pin=%s approx_bytes=%s",
+        lecture.id,
+        pin_code,
+        chunk_bytes,
+    )
+
+    await _notify_teacher_asr(
+        pin_code,
+        {"status": "processing", "message": "Распознавание..."},
+    )
+    asyncio.create_task(_run_asr_pipeline(pin_code, lecture.id, base64_chunk))

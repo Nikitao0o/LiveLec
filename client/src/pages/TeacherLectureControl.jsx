@@ -31,6 +31,7 @@ const TeacherLectureControl = () => {
   const [slideCount, setSlideCount] = useState(0);
   const [currentSlide, setCurrentSlide] = useState(1);
   const [isUploading, setIsUploading] = useState(false);
+  const [asrHint, setAsrHint] = useState('');
 
   const showToast = (message) => {
     setToast(message);
@@ -142,6 +143,20 @@ const TeacherLectureControl = () => {
             [message.data.option_index]: prev[message.data.option_index] + 1,
           }));
           break;
+        case 'ASR_STATUS': {
+          const { status, text, message } = message.data || {};
+          if (status === 'ok' && text) {
+            setAsrHint(`Распознано: «${text.slice(0, 80)}${text.length > 80 ? '…' : ''}»`);
+          } else if (status === 'processing') {
+            setAsrHint('ASR: распознавание… (первый запуск может занять 1–2 мин)');
+          } else if (status === 'error') {
+            setAsrHint(`ASR ошибка: ${message || 'неизвестно'}`);
+            showToast(message || 'Ошибка распознавания речи');
+          } else if (status === 'empty') {
+            setAsrHint('ASR: говорите громче / ближе к микрофону');
+          }
+          break;
+        }
         default:
           break;
       }
@@ -399,6 +414,12 @@ const TeacherLectureControl = () => {
               </ResponsiveContainer>
             </div>
           </div>
+
+          {asrHint && (
+            <p className="text-[10px] font-bold text-slate-500 text-center uppercase tracking-wide shrink-0">
+              {asrHint}
+            </p>
+          )}
 
           <div className="grid grid-cols-2 gap-4 shrink-0 leading-none">
              <button 

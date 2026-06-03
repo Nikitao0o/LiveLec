@@ -4,7 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import engine, Base
 from app.api import auth_router, lectures_router, questions_router, analytics_router, disciplines_router
-from app.ws.endpoint import router as ws_router 
+from app.ws.endpoint import router as ws_router
+from app.services.asr import asr_service
 
 app = FastAPI(
     title="LiveLec API",
@@ -58,6 +59,7 @@ async def startup():
                     "ALTER TABLE lectures ADD COLUMN IF NOT EXISTS current_slide INTEGER NOT NULL DEFAULT 1"
                 ))
             print("База данных успешно подключена и готова!")
+            asyncio.create_task(asr_service.ensure_model())
             break
         except Exception as e:
             print("Ожидание запуска базы данных (PostgreSQL)...")
