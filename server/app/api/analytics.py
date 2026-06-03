@@ -39,9 +39,16 @@ async def global_analytics(db: AsyncSession = Depends(get_db), current_user: Use
 
     avg_engagement = (total_engagement_sum // len(lectures)) if lectures else 0
 
+    students_res = await db.execute(
+        select(func.coalesce(func.sum(Lecture.peak_students), 0)).where(
+            Lecture.teacher_id == current_user.id
+        )
+    )
+    active_students = students_res.scalar_one()
+
     return {
         "total_lectures": total_lectures,
-        "active_students": total_lectures * 14,
+        "active_students": active_students,
         "total_disciplines": total_disciplines,
         "engagement_growth": f"{avg_engagement}%",
         "chart_data": chart_data

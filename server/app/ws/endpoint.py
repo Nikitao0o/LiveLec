@@ -49,6 +49,12 @@ async def websocket_endpoint(
     
     # Подключаем клиента
     await manager.connect(websocket, pin_code, user_type)
+
+    if user_type == "student":
+        student_count = manager.count_students(pin_code)
+        if student_count > (lecture.peak_students or 0):
+            lecture.peak_students = student_count
+            await db.commit()
     
     try:
         # Подтверждение подключения

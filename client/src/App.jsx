@@ -9,7 +9,8 @@ import TeacherDashboard from './pages/TeacherDashboard';
 import GlobalAnalytics from './pages/GlobalAnalytics';
 import LectureArchive from './pages/LectureArchive';
 import TeacherSettings from './pages/TeacherSettings';
-import PostLectureAnalytics from './pages/PostLectureAnalytics'; 
+import PostLectureAnalytics from './pages/PostLectureAnalytics';
+import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   return (
@@ -18,7 +19,14 @@ function App() {
         <Route path="/" element={<JoinLecture />} />
         <Route path="/login" element={<AuthTeacher />} />
         <Route path="/lecture" element={<StudentLecture />} />
-        <Route path="/teacher/control" element={<TeacherLectureControl />} />
+        <Route
+          path="/teacher/control"
+          element={
+            <ProtectedRoute>
+              <TeacherLectureControl />
+            </ProtectedRoute>
+          }
+        />
 
         <Route path="/teacher" element={<TeacherLayout />}>
           <Route index element={<TeacherDashboard />} />

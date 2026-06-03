@@ -51,7 +51,10 @@ const Sidebar = () => {
         </button>
 
         <button 
-          onClick={() => navigate('/login')}
+          onClick={() => {
+            localStorage.removeItem('token');
+            navigate('/login');
+          }}
           className="flex items-center gap-3 text-rose-400 hover:bg-rose-50 px-4 py-3 rounded-2xl font-bold transition-all mb-8"
         >
           <LogOut size={20} />

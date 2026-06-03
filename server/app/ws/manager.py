@@ -58,10 +58,18 @@ class ConnectionManager:
                     except:
                         pass
     
+    def count_students(self, pin_code: str) -> int:
+        if pin_code not in self.active_connections:
+            return 0
+        return sum(
+            1 for conn in self.active_connections[pin_code]
+            if conn["user_type"] == "student"
+        )
+
     async def broadcast_participants(self, pin_code: str):
-        """Отправить количество участников в комнате"""
+        """Отправить количество студентов в комнате"""
         if pin_code in self.active_connections:
-            count = len(self.active_connections[pin_code])
+            count = self.count_students(pin_code)
             message = {
                 "type": "PARTICIPANTS_UPDATE",
                 "data": {"count": count}

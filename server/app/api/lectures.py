@@ -30,6 +30,7 @@ async def generate_unique_pin(db: AsyncSession) -> str:
 def serialize_lecture(lecture: Lecture) -> LectureResponse:
     return LectureResponse(
         id=lecture.id,
+        teacher_id=lecture.teacher_id,
         title=lecture.title,
         discipline=lecture.discipline,
         pin_code=lecture.pin_code,
@@ -98,7 +99,10 @@ async def join_lecture(join_data: LectureJoin, db: AsyncSession = Depends(get_db
     return LectureJoinResponse(
         lecture_id=lecture.id,
         title=lecture.title,
-        status=lecture.status.value
+        discipline=lecture.discipline,
+        pin_code=lecture.pin_code,
+        status=lecture.status.value,
+        questions=[]
     )
 
 @router.post("/{lecture_id}/finish", response_model=LectureResponse)
@@ -142,7 +146,7 @@ async def lecture_analytics(
         "created_at": lecture.created_at.isoformat(),
         "confusion_sum": confusion_sum,
         "questions_count": questions_count,
-        "students_count": max(12, questions_count * 2),
+        "students_count": lecture.peak_students or 0,
         "engagement": max(0, 100 - confusion_sum * 2),
         "chart_data": chart_data
     }

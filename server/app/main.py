@@ -36,8 +36,12 @@ async def startup():
     # Пытаемся подключиться к БД 5 раз с интервалом, давая PostgreSQL время на запуск
     for _ in range(5):
         try:
+            from sqlalchemy import text
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+                await conn.execute(text(
+                    "ALTER TABLE lectures ADD COLUMN IF NOT EXISTS peak_students INTEGER NOT NULL DEFAULT 0"
+                ))
             print("База данных успешно подключена и готова!")
             break
         except Exception as e:

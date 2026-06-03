@@ -9,6 +9,7 @@ const TeacherDashboard = () => {
   const [newLecture, setNewLecture] = useState({ title: '', subject: '' });
   const [lectures, setLectures] = useState([]);
   const [toast, setToast] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [teacherName, setTeacherName] = useState("преподаватель");
 
   const DISCIPLINES = [
@@ -45,6 +46,7 @@ const TeacherDashboard = () => {
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const response = await api.post('/lectures/', {
         title: newLecture.title,
@@ -60,8 +62,18 @@ const TeacherDashboard = () => {
       
     } catch (error) {
       console.error("Ошибка создания лекции:", error);
-      const errorMsg = error.response?.data?.detail || error.message || "ошибка сервера";
+      const detail = error.response?.data?.detail;
+      const errorMsg = Array.isArray(detail)
+        ? detail.map((e) => e.msg).join(', ')
+        : detail || error.message || "ошибка сервера";
+      if (error.response?.status === 401) {
+        showToast("Войдите в аккаунт преподавателя, чтобы создать лекцию");
+        navigate('/login');
+        return;
+      }
       showToast("Не удалось создать лекцию: " + errorMsg);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -231,9 +243,10 @@ const TeacherDashboard = () => {
                    </button>
                    <button 
                      type="submit"
-                     className="flex-[2] bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-2xl shadow-lg shadow-indigo-100 text-xs uppercase tracking-widest transition-all leading-none cursor-pointer"
+                     disabled={isSubmitting}
+                     className="flex-[2] bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-black py-4 rounded-2xl shadow-lg shadow-indigo-100 text-xs uppercase tracking-widest transition-all leading-none cursor-pointer"
                    >
-                      Начать лекцию
+                      {isSubmitting ? 'Создание…' : 'Начать лекцию'}
                    </button>
                 </div>
              </form>

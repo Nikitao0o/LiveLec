@@ -8,8 +8,8 @@ export const useWebSocket = (pinCode, userType) => {
   useEffect(() => {
     if (!pinCode) return;
 
-    // Подключаемся к нашему бэкенду
-    const wsUrl = `ws://localhost:8000/ws/${pinCode}?user_type=${userType}`;
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws/${pinCode}?user_type=${userType}`;
     ws.current = new WebSocket(wsUrl);
 
     ws.current.onopen = () => setIsConnected(true);

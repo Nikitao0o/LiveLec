@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Mail, Lock, User, ArrowLeft, GraduationCap, ChevronRight, AlertCircle, X } from 'lucide-react';
 import api from '../api';
 
@@ -13,6 +13,9 @@ const AuthTeacher = () => {
   });
   
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get('redirect') || location.state?.from || '/teacher';
 
   // Функция показа уведомления на 4 секунды
   const showToast = (message) => {
@@ -48,8 +51,7 @@ const AuthTeacher = () => {
         localStorage.setItem('token', response.data.access_token);
       }
       
-      // Перенаправляем в дашборд
-      navigate('/teacher');
+      navigate(redirectTo, { replace: true });
       
     } catch (error) {
       console.error('Ошибка авторизации:', error.response?.data || error.message);
