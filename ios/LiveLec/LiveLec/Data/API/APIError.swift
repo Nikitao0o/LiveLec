@@ -2,24 +2,35 @@ import Foundation
 
 enum APIError: LocalizedError {
     case invalidResponse
-    case serverStatus(Int)
+    case serverStatus(Int, detail: String?)
     case decodingFailed
 
     var errorDescription: String? {
         switch self {
         case .invalidResponse:
-            "Некорректный ответ сервера"
-        case .serverStatus(let code):
+            return "Некорректный ответ сервера"
+        case .serverStatus(let code, let detail):
+            if let detail, !detail.isEmpty {
+                switch detail {
+                case "Email already registered":
+                    return "Email уже зарегистрирован. Переключитесь на вход."
+                case "Invalid credentials":
+                    return "Неверный email или пароль"
+                default:
+                    return detail
+                }
+            }
+
             switch code {
             case 404:
-                "Лекция с таким PIN не найдена"
+                return "Лекция с таким PIN не найдена"
             case 409:
-                "Лекция уже завершена"
+                return "Лекция уже завершена"
             default:
-                "Сервер вернул ошибку \(code)"
+                return "Сервер вернул ошибку \(code)"
             }
         case .decodingFailed:
-            "Не удалось прочитать ответ сервера"
+            return "Не удалось прочитать ответ сервера"
         }
     }
 }

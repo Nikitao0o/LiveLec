@@ -69,7 +69,7 @@ final class APIClient {
             throw APIError.invalidResponse
         }
         guard (200..<300).contains(httpResponse.statusCode) else {
-            throw APIError.serverStatus(httpResponse.statusCode)
+            throw APIError.serverStatus(httpResponse.statusCode, detail: errorDetail(from: data))
         }
 
         do {
@@ -102,7 +102,7 @@ final class APIClient {
             throw APIError.invalidResponse
         }
         guard (200..<300).contains(httpResponse.statusCode) else {
-            throw APIError.serverStatus(httpResponse.statusCode)
+            throw APIError.serverStatus(httpResponse.statusCode, detail: errorDetail(from: data))
         }
 
         do {
@@ -121,6 +121,25 @@ final class APIClient {
         default:
             "application/octet-stream"
         }
+    }
+
+    private func errorDetail(from data: Data) -> String? {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let detail = object["detail"]
+        else { return nil }
+
+        if let message = detail as? String {
+            return message
+        }
+
+        if let items = detail as? [[String: Any]] {
+            return items
+                .compactMap { $0["msg"] as? String }
+                .joined(separator: "\n")
+        }
+
+        return nil
     }
 }
 
